@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
+    // viewers 목록은 Cloud Functions(onGroupWritten)만 갱신한다.
+    function canView(uid) {
+      return isMe(uid) || (signedIn() && request.auth.uid in userDoc(uid).data.get('viewers', []));
+    }
+    // 클라이언트가 직접 바꾸면 안 되는 서버 전용 필드
+    function touchesServerFields() {
+      return resource == null
+        ? request.resource.data.keys().hasAny(['viewers', 'groupIds'])
+        : request.resource.data.diff(resource.data).affectedKeys().hasAny(['viewers', 'groupIds']);
+    }
+
+    match /users/{uid} {
+      allow read: if canView(uid);
+      allow create, update: if isMe(uid) && !touchesServerFields();
+      allow delete: if false; // 탈퇴는 deleteMyData 함수로
+
+      // 이동경로: 본인만 추가, 같은 그룹 멤버만 열람
+      match /locations/{locId} {
+        allow read: if canView(uid);
+        allow create: if isMe(uid)
+          && request.resource.data.keys().hasOnly(['lat', 'lng', 'accuracy', 'ts'])
+          && request.resource.data.lat is number
+          && request.resource.data.lng is number;
+        allow update, delete: if false;
+      }
+
+      match /rings/{ringId} {
+        allow read: if isMe(uid);
+        allow write: if false;
+      }
+    }
+
+    // 그룹: 멤버만 읽기 가능, 모든 변경은 Cloud Functions 경유
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow write: if false;
+
+      match /requests/{requesterUid} {
+        allow read: if isMe(requesterUid)
+          || (signedIn() && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid);
+        allow write: if false;
+      }
+    }
+
+    match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+  }
+}

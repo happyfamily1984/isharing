@@ -1,0 +1,74 @@
+import { readFileSync } from "node:fs";
+import { after, before, beforeEach, test } from "node:test";
+import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
+import { doc, getDoc, setDoc, updateDoc, addDoc, collection, Timestamp } from "firebase/firestore";
+
+let env;
+
+before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: "demo-familylocator",
+    firestore: { rules: readFileSync("../firestore.rules", "utf8") },
+  });
+});
+after(() => env.cleanup());
+
+beforeEach(async () => {
+  await env.clearFirestore();
+  // 서버(Functions)가 만든 상태를 흉내낸다: alice, bob 은 같은 그룹, mallory 는 외부인
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "users/alice"), { displayName: "Alice", viewers: ["bob"], lastLocation: { lat: 1, lng: 2 } });
+    await setDoc(doc(db, "users/bob"), { displayName: "Bob", viewers: ["alice"] });
+    await setDoc(doc(db, "users/mallory"), { displayName: "M", viewers: [] });
+    await setDoc(doc(db, "users/alice/locations/p1"), { lat: 1, lng: 2, ts: Timestamp.now() });
+    await setDoc(doc(db, "groups/g1"), { name: "Fam", ownerId: "alice", members: ["alice", "bob"] });
+    await setDoc(doc(db, "groups/g1/requests/mallory"), { displayName: "M" });
+  });
+});
+
+const as = (uid) => env.authenticatedContext(uid).firestore();
+
+test("group members can read each other's location and history", async () => {
+  await assertSucceeds(getDoc(doc(as("bob"), "users/alice")));
+  await assertSucceeds(getDoc(doc(as("bob"), "users/alice/locations/p1")));
+});
+
+test("outsiders and anonymous users cannot read location", async () => {
+  await assertFails(getDoc(doc(as("mallory"), "users/alice")));
+  await assertFails(getDoc(doc(as("mallory"), "users/alice/locations/p1")));
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), "users/alice")));
+});
+
+test("users cannot grant themselves access by editing viewers/groupIds", async () => {
+  await assertFails(updateDoc(doc(as("mallory"), "users/mallory"), { viewers: ["alice"] }));
+  await assertFails(updateDoc(doc(as("mallory"), "users/alice"), { viewers: ["alice", "bob", "mallory"] }));
+  await assertFails(setDoc(doc(as("newbie"), "users/newbie"), { displayName: "N", groupIds: ["g1"] }));
+});
+
+test("users can update their own location and create their profile", async () => {
+  await assertSucceeds(updateDoc(doc(as("alice"), "users/alice"), { lastLocation: { lat: 3, lng: 4 }, sharing: true }));
+  await assertSucceeds(setDoc(doc(as("newbie"), "users/newbie"), { displayName: "N", sharing: true }));
+});
+
+test("only the owner can append history; no one can write another's history", async () => {
+  await assertSucceeds(addDoc(collection(as("alice"), "users/alice/locations"), { lat: 1, lng: 2, accuracy: 5, ts: Timestamp.now() }));
+  await assertFails(addDoc(collection(as("bob"), "users/alice/locations"), { lat: 1, lng: 2, ts: Timestamp.now() }));
+  await assertFails(addDoc(collection(as("alice"), "users/alice/locations"), { lat: 1, lng: 2, ts: Timestamp.now(), extra: 1 }));
+});
+
+test("groups are readable by members only and never writable by clients", async () => {
+  await assertSucceeds(getDoc(doc(as("bob"), "groups/g1")));
+  await assertFails(getDoc(doc(as("mallory"), "groups/g1")));
+  await assertFails(updateDoc(doc(as("alice"), "groups/g1"), { members: ["alice", "bob", "mallory"] }));
+});
+
+test("join requests are visible to the group owner and the requester only", async () => {
+  await assertSucceeds(getDoc(doc(as("alice"), "groups/g1/requests/mallory")));
+  await assertSucceeds(getDoc(doc(as("mallory"), "groups/g1/requests/mallory")));
+  await assertFails(getDoc(doc(as("bob"), "groups/g1/requests/mallory")));
+});
+
+test("invite codes are server-only", async () => {
+  await assertFails(getDoc(doc(as("alice"), "inviteCodes/ABC123")));
+});

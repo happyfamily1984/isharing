@@ -1,0 +1,53 @@
+# 서버(Cloud Functions + Firestore 보안 규칙) 배포.
+# main 브랜치에 서버 코드가 바뀌어 올라오면 자동 실행되고, Actions 탭에서 수동 실행도 가능하다.
+#
+# 필요한 GitHub Secrets (Settings > Secrets and variables > Actions):
+#   FIREBASE_SERVICE_ACCOUNT : 배포용 서비스 계정 키(JSON) 전체 내용
+#   FIREBASE_PROJECT_ID      : Firebase 프로젝트 ID (예: family-locator-1a2b3)
+name: Deploy Firebase backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "functions/**"
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "firebase.json"
+
+concurrency:
+  group: deploy-firebase
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install functions dependencies
+        run: npm ci
+        working-directory: functions
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: functions
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy
+        run: >
+          npx --yes firebase-tools@14 deploy
+          --only firestore,functions
+          --project "${{ secrets.FIREBASE_PROJECT_ID }}"
+          --non-interactive --force
