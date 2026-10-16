@@ -3,8 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../config.dart';
 import '../models/member.dart';
+import '../widgets/map_tiles.dart';
 import '../services/group_service.dart';
 
 /// 날짜·시간대별 이동경로.
@@ -123,10 +123,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     initialZoom: 13,
                   ),
                   children: [
-                    TileLayer(
-                      urlTemplate: AppConfig.tileUrl,
-                      userAgentPackageName: AppConfig.tileUserAgent,
-                    ),
+                    const AppTileLayer(),
                     PolylineLayer(polylines: [
                       if (line.length > 1)
                         Polyline(points: line, strokeWidth: 5, color: scheme.primary),
@@ -146,7 +143,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           child: Icon(Icons.location_on, size: 40, color: scheme.error),
                         ),
                     ]),
-                    const SimpleAttributionWidget(source: Text('OpenStreetMap contributors')),
+                    const AppMapAttribution(),
                   ],
                 ),
                 if (_loading) const LinearProgressIndicator(),

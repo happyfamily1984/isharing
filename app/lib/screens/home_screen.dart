@@ -6,12 +6,15 @@ import 'package:latlong2/latlong.dart';
 
 import '../config.dart';
 import '../models/member.dart';
+import '../widgets/map_tiles.dart';
+import '../services/auth_service.dart';
 import '../services/backend.dart';
 import '../services/group_service.dart';
 import '../services/location_service.dart';
 import '../services/messaging_service.dart';
 import '../services/plan.dart';
 import 'disclosure_screen.dart';
+import 'name_setup_screen.dart';
 import 'groups_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -56,7 +59,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final me = await Backend.userDoc(Backend.uid).get();
     if (!mounted) return;
-    if ((me.data()?['sharing'] as bool?) ?? true) await ensureSharing(context);
+    final data = me.data() ?? const <String, dynamic>{};
+    // 구글로 가입한 사용자는 처음 한 번 이름을 정한다.
+    if (data['nameConfirmed'] != true && !AuthService.usesPassword) {
+      await NameSetupScreen.show(context, (data['displayName'] as String?) ?? '');
+      if (!mounted) return;
+    }
+    if ((data['sharing'] as bool?) ?? true) await ensureSharing(context);
   }
 
   void _onMembersChanged() {
@@ -149,10 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   initialZoom: 11,
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate: AppConfig.tileUrl,
-                    userAgentPackageName: AppConfig.tileUserAgent,
-                  ),
+                  const AppTileLayer(),
                   MarkerLayer(
                     markers: [
                       for (final m in located)
@@ -168,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                     ],
                   ),
-                  const SimpleAttributionWidget(source: Text('OpenStreetMap contributors')),
+                  const AppMapAttribution(),
                 ],
               ),
               if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),

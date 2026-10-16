@@ -24,7 +24,7 @@ class AuthService {
     final cred = await Backend.auth
         .createUserWithEmailAndPassword(email: email, password: password);
     await cred.user!.updateDisplayName(name);
-    await _createProfile(cred.user!.uid, name);
+    await _createProfile(cred.user!.uid, name, nameConfirmed: true);
   }
 
   static Future<void> signIn(String email, String password) =>
@@ -39,16 +39,26 @@ class AuthService {
     final user = cred.user!;
     final profile = await Backend.userDoc(user.uid).get();
     if (!profile.exists || profile.data()?['displayName'] == null) {
-      await _createProfile(user.uid, account.displayName ?? user.displayName ?? '이름 없음');
+      // 구글 이름은 첫 화면(NameSetupScreen)에서 확인·수정받는다.
+      await _createProfile(user.uid, account.displayName ?? user.displayName ?? '',
+          nameConfirmed: false);
     }
   }
 
-  static Future<void> _createProfile(String uid, String name) =>
+  static Future<void> _createProfile(String uid, String name, {required bool nameConfirmed}) =>
       Backend.userDoc(uid).set({
         'displayName': name,
+        'nameConfirmed': nameConfirmed,
         'sharing': true,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+  /// 그룹 멤버에게 보일 이름을 저장한다.
+  static Future<void> setDisplayName(String name) async {
+    await Backend.auth.currentUser!.updateDisplayName(name);
+    await Backend.userDoc(Backend.uid)
+        .set({'displayName': name, 'nameConfirmed': true}, SetOptions(merge: true));
+  }
 
   static Future<void> resetPassword(String email) =>
       Backend.auth.sendPasswordResetEmail(email: email);
