@@ -82,6 +82,19 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    cd app && flutter pub get && flutter run
    ```
 
+### PC 없이 GitHub로 배포하기 (추천)
+
+`.github/workflows/` 의 두 워크플로가 GitHub 서버에서 대신 실행됩니다.
+
+| 워크플로 | 하는 일 | 필요한 Secret |
+| --- | --- | --- |
+| Deploy Firebase backend | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
+| Build Android APK | 테스트 APK 빌드 → Releases `test-latest` 에 업로드 | `GOOGLE_SERVICES_JSON` |
+
+main 브랜치에 코드가 합쳐지면 자동 실행되고, Actions 탭에서 "Run workflow" 로 수동 실행도 됩니다.
+서비스 계정 키는 Google Cloud 콘솔 > IAM > 서비스 계정에서 만들고 역할 **편집자(Editor)** 와
+**서비스 계정 사용자** 를 부여합니다.
+
 ### 보안 규칙 테스트
 
 ```bash
