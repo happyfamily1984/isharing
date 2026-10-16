@@ -70,7 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await AuthService.signInWithGoogle();
     } catch (e) {
-      if (!Backend.isCancel(e)) _show(Backend.errorMessage(e));
+      _show(Backend.errorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -78,7 +78,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _show(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 8)));
   }
 
   @override
@@ -104,7 +105,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 32),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _google,
-                    icon: const Icon(Icons.account_circle),
+                    icon: _busy
+                        ? const SizedBox(
+                            height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.account_circle),
                     label: const Text('구글 계정으로 계속하기'),
                     style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                   ),
