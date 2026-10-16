@@ -102,6 +102,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return shared.any((g) => Plan.parse(g.planName) == Plan.premium) ? Plan.premium : Plan.free;
   }
 
+  void _openHistory(String uid) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => HistoryScreen(
+        members: _members,
+        initialUid: uid,
+        historyDaysFor: (uid) =>
+            uid == Backend.uid ? Plan.premium.historyDays : _planWith(uid).historyDays,
+      ),
+    ));
+  }
+
   void _openMember(Member m) {
     if (m.position != null) _map.move(m.position!, 16);
     showModalBottomSheet<void>(
@@ -112,13 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
         isMe: m.uid == Backend.uid,
         onHistory: () {
           Navigator.pop(ctx);
-          Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => HistoryScreen(
-              uid: m.uid,
-              name: m.displayName,
-              historyDays: m.uid == Backend.uid ? Plan.premium.historyDays : _planWith(m.uid).historyDays,
-            ),
-          ));
+          _openHistory(m.uid);
         },
       ),
     );
@@ -130,6 +135,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text(AppConfig.appName),
         actions: [
+          IconButton(
+            tooltip: '이동경로',
+            icon: const Icon(Icons.route),
+            onPressed: () => _openHistory(Backend.uid),
+          ),
           IconButton(
             tooltip: '그룹',
             icon: const Icon(Icons.groups),
