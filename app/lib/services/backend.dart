@@ -22,16 +22,18 @@ class Backend {
     return Map<String, dynamic>.from(result.data);
   }
 
-  /// 사용자가 구글 로그인 창을 닫은 경우 (오류 메시지를 띄우지 않는다)
-  static bool isCancel(Object e) =>
-      e is GoogleSignInException &&
-      (e.code == GoogleSignInExceptionCode.canceled ||
-          e.code == GoogleSignInExceptionCode.interrupted);
-
   /// 함수/인증 오류를 사용자에게 보여줄 문장으로 바꾼다.
   static String errorMessage(Object e) {
     if (e is GoogleSignInException) {
-      return '구글 로그인에 실패했습니다. (${e.code.name})';
+      // Firebase 에 SHA-1 이 없거나 맞지 않아도 Android 는 '취소(canceled)'로 알려주므로
+      // 취소도 숨기지 않고 원인 확인용 정보와 함께 보여준다.
+      final detail = [e.code.name, if (e.description != null) e.description].join(': ');
+      if (e.code == GoogleSignInExceptionCode.canceled ||
+          e.code == GoogleSignInExceptionCode.interrupted) {
+        return '구글 로그인이 완료되지 않았어요. 계정을 선택했는데도 이 메시지가 나오면 '
+            '앱 설정(SHA-1) 문제입니다. ($detail)';
+      }
+      return '구글 로그인에 실패했습니다. ($detail)';
     }
     if (e is FirebaseFunctionsException) return e.message ?? '요청을 처리하지 못했습니다.';
     if (e is FirebaseAuthException) {
