@@ -48,8 +48,9 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
+    final usesPassword = AuthService.usesPassword;
     final controller = TextEditingController();
-    final password = await showDialog<String>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('회원 탈퇴'),
@@ -57,31 +58,41 @@ class SettingsScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('모든 그룹에서 나가고 위치·이동경로 기록이 즉시 삭제됩니다. 되돌릴 수 없어요.'),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: '비밀번호 확인'),
-            ),
+            if (usesPassword)
+              TextField(
+                controller: controller,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '비밀번호 확인'),
+              )
+            else
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text('본인 확인을 위해 구글 로그인 창이 한 번 더 열립니다.'),
+              ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
-            onPressed: () => Navigator.pop(ctx, controller.text),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('탈퇴'),
           ),
         ],
       ),
     );
-    if (password == null || password.isEmpty || !context.mounted) return;
+    final password = controller.text;
+    controller.dispose();
+    if (confirmed != true || (usesPassword && password.isEmpty) || !context.mounted) return;
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await AuthService.deleteAccount(password);
+      await AuthService.deleteAccount(password: password);
       navigator.popUntil((r) => r.isFirst);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
+      if (!Backend.isCancel(e)) {
+        messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
+      }
     }
   }
 

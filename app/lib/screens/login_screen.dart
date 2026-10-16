@@ -65,6 +65,17 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _google() async {
+    setState(() => _busy = true);
+    try {
+      await AuthService.signInWithGoogle();
+    } catch (e) {
+      if (!Backend.isCancel(e)) _show(Backend.errorMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _show(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -91,6 +102,37 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text('가족·친구와 서로의 위치를 확인하세요',
                       textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
                   const SizedBox(height: 32),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _google,
+                    icon: const Icon(Icons.account_circle),
+                    label: const Text('구글 계정으로 계속하기'),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                  ),
+                  const SizedBox(height: 8),
+                  Text.rich(
+                    TextSpan(children: [
+                      const TextSpan(text: '계속하면 '),
+                      TextSpan(
+                        text: '개인정보처리방침',
+                        style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            decoration: TextDecoration.underline),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () => launchUrl(Uri.parse(AppConfig.privacyPolicyUrl)),
+                      ),
+                      const TextSpan(text: '(위치정보 수집·공유 포함)에 동의하게 됩니다.'),
+                    ]),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Row(children: [
+                      Expanded(child: Divider()),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('또는 이메일')),
+                      Expanded(child: Divider()),
+                    ]),
+                  ),
                   if (_signUp) ...[
                     TextField(
                       controller: _name,

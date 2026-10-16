@@ -58,12 +58,17 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
 필요한 것: Flutter (stable), Node 22, Firebase CLI (`npm i -g firebase-tools`), Android Studio / Xcode
 
 1. [Firebase 콘솔](https://console.firebase.google.com)에서 프로젝트 생성
-   - **Authentication** → 이메일/비밀번호 사용 설정
+   - **Authentication** → **Google**, **이메일/비밀번호** 사용 설정
    - **Firestore** 생성 (리전: `asia-northeast3` 서울 권장)
    - **Blaze 요금제** (Cloud Functions에 필요)
-2. Android 앱 등록 (패키지: `com.happyfamily.familylocator`) → `google-services.json` 을 `app/android/app/` 에 저장
+2. Android 앱 등록 (패키지: `com.happyfamily.familylocator`)
+   - **SHA-1 지문 등록** (구글 로그인에 필요). 테스트 빌드용 키(`app/android/app/debug.keystore`, 공개용 테스트 키)의 지문:
+     `41:A2:A9:DD:A5:8F:D8:C7:6C:13:6D:8D:D7:3A:BE:A3:1C:D8:A1:DB`
+   - Play 출시 후에는 Play Console > 앱 무결성 > **앱 서명 키 인증서의 SHA-1**도 추가로 등록해야 스토어 버전에서 구글 로그인이 동작함
+   - SHA-1 등록과 Google 로그인 사용 설정을 **마친 뒤** `google-services.json` 을 내려받아 `app/android/app/` 에 저장
 3. iOS 앱 등록 (번들 ID: `com.happyfamily.familylocator`) → `GoogleService-Info.plist` 를 Xcode에서 `Runner` 에 추가
    - APNs 인증 키(.p8)를 Firebase 프로젝트 설정 > 클라우드 메시징에 업로드
+   - 구글 로그인: `GoogleService-Info.plist` 의 `REVERSED_CLIENT_ID` 값을 Xcode > Runner > Info > URL Types 에 추가
    - Xcode > Signing & Capabilities: **Push Notifications**, **Background Modes**(Location updates, Remote notifications) 추가
 4. 서버 배포
    ```bash

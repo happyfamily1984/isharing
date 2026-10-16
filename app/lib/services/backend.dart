@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 /// Firebase 접근 지점 모음. Cloud Functions 리전은 functions/src/index.ts 와 같아야 한다.
 class Backend {
@@ -21,8 +22,17 @@ class Backend {
     return Map<String, dynamic>.from(result.data);
   }
 
+  /// 사용자가 구글 로그인 창을 닫은 경우 (오류 메시지를 띄우지 않는다)
+  static bool isCancel(Object e) =>
+      e is GoogleSignInException &&
+      (e.code == GoogleSignInExceptionCode.canceled ||
+          e.code == GoogleSignInExceptionCode.interrupted);
+
   /// 함수/인증 오류를 사용자에게 보여줄 문장으로 바꾼다.
   static String errorMessage(Object e) {
+    if (e is GoogleSignInException) {
+      return '구글 로그인에 실패했습니다. (${e.code.name})';
+    }
     if (e is FirebaseFunctionsException) return e.message ?? '요청을 처리하지 못했습니다.';
     if (e is FirebaseAuthException) {
       switch (e.code) {
@@ -32,6 +42,10 @@ class Backend {
           return '이미 가입된 이메일입니다.';
         case 'weak-password':
           return '비밀번호는 6자 이상이어야 합니다.';
+        case 'account-exists-with-different-credential':
+          return '이미 이메일/비밀번호로 가입된 계정입니다. 이메일로 로그인해주세요.';
+        case 'user-mismatch':
+          return '현재 로그인한 계정과 다른 구글 계정입니다.';
         case 'invalid-credential':
         case 'wrong-password':
         case 'user-not-found':

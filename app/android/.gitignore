@@ -15,3 +15,4 @@ key.properties
 
 # Firebase 설정 파일 (각자 Firebase 콘솔에서 내려받기)
 app/google-services.json
+!app/debug.keystore

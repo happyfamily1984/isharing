@@ -38,6 +38,14 @@ android {
     }
 
     signingConfigs {
+        // 테스트용 디버그 키를 저장소에 고정해 SHA-1 지문이 바뀌지 않게 한다
+        // (Firebase 구글 로그인에 SHA-1 등록 필요). 공개해도 되는 테스트 전용 키.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             keyAlias = keystoreProperties.getProperty("keyAlias")
             keyPassword = keystoreProperties.getProperty("keyPassword")
