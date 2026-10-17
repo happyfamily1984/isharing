@@ -216,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openMember(Member m) {
-    if (m.position != null) _map.moveTo(m.position!, zoom: 16);
+    if (m.position != null) _map.moveTo(m.position!, zoom: memberZoom);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -331,6 +331,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              // 오른쪽 아래: 가족 아이콘을 누르면 그 사람 위치로 이동
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, box) => Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      // 아래 가족 목록(화면의 25%) 바로 위에 놓는다
+                      padding: EdgeInsets.only(right: 12, bottom: box.maxHeight * 0.25 + 12),
+                      child: _MemberJumpBar(
+                        members: located,
+                        onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
+                        onAll: () => _map.fit(located.map((m) => m.position!).toList()),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               DraggableScrollableSheet(
                 initialChildSize: 0.25,
                 minChildSize: 0.12,
@@ -378,6 +395,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
+const memberZoom = 15.0;
+
+/// 지도 오른쪽 아래의 가족 아이콘 줄. 누르면 그 사람 위치로 지도를 옮긴다.
+class _MemberJumpBar extends StatelessWidget {
+  const _MemberJumpBar({required this.members, required this.onMember, required this.onAll});
+
+  final List<Member> members;
+  final void Function(Member) onMember;
+  final VoidCallback onAll;
+
+  @override
+  Widget build(BuildContext context) {
+    if (members.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 4,
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(28),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: ConstrainedBox(
+          // 가족이 많으면 스크롤
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (members.length > 1)
+                  Tooltip(
+                    message: '모두 보기',
+                    child: IconButton(
+                      onPressed: onAll,
+                      icon: const Icon(Icons.groups),
+                    ),
+                  ),
+                for (final m in members)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Tooltip(
+                      message: m.uid == Backend.uid ? '나' : m.displayName,
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => onMember(m),
+                        child: MemberAvatar(member: m, radius: 21),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
