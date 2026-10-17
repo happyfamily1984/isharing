@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/backend.dart';
 import '../services/location_service.dart';
 import 'home_screen.dart';
+import 'profile_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -25,26 +26,6 @@ class SettingsScreen extends StatelessWidget {
       await Backend.userDoc(Backend.uid).set(
           {'sharing': false, 'lastLocation': FieldValue.delete()}, SetOptions(merge: true));
     }
-  }
-
-  Future<void> _rename(BuildContext context, String current) async {
-    final controller = TextEditingController(text: current);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('이름 변경'),
-        content: TextField(controller: controller, autofocus: true, maxLength: 20),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('저장')),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
-    await Backend.auth.currentUser!.updateDisplayName(name);
-    await Backend.userDoc(Backend.uid).set({'displayName': name}, SetOptions(merge: true));
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
@@ -114,10 +95,18 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) => _setSharing(context, v),
               ),
               ListTile(
-                leading: const Icon(Icons.badge),
-                title: const Text('이름'),
+                leading: CircleAvatar(
+                  child: Text((data['avatar'] as String?) ?? '🙂',
+                      style: const TextStyle(fontSize: 22)),
+                ),
+                title: const Text('프로필 (이름 · 캐릭터)'),
                 subtitle: Text(name),
-                onTap: () => _rename(context, name),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => ProfileScreen.show(
+                  context,
+                  name: name,
+                  avatar: data['avatar'] as String?,
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.email),

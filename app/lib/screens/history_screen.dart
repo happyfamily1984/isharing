@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/member.dart';
 import '../services/backend.dart';
 import '../services/group_service.dart';
+import '../services/trips.dart';
 import '../widgets/family_map.dart';
 
 /// 멤버별 · 날짜별 · 시간대별 이동경로.
@@ -29,8 +30,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final _map = FamilyMapController();
   late String _uid = widget.initialUid;
   late DateTime _day = _today();
-  RangeValues _hours = const RangeValues(0, 24);
   List<LocationPoint> _points = const [];
+  List<RouteSegment> _segments = const [];
+
+  /// 목록에서 고른 구간. null 이면 하루 전체.
+  RouteSegment? _selected;
   bool _loading = true;
   String? _error;
   int _request = 0;
@@ -59,7 +63,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final points = await HistoryService.load(_uid, _day, _day.add(const Duration(days: 1)));
       // 멤버/날짜를 빠르게 바꿨을 때 이전 요청 결과가 덮어쓰지 않게 한다.
       if (!mounted || request != _request) return;
-      setState(() => _points = points);
+      setState(() {
+        _points = points;
+        _segments = buildSegments(points);
+        _selected = null;
+      });
       _fit();
     } catch (e) {
       if (mounted && request == _request) setState(() => _error = '이동경로를 불러오지 못했습니다.');
@@ -81,12 +89,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _load();
   }
 
-  List<LocationPoint> get _visible => _points.where((p) {
-        final h = p.time.hour + p.time.minute / 60;
-        return h >= _hours.start && h <= _hours.end;
-      }).toList();
+  List<LocationPoint> get _visible => _selected?.points ?? _points;
 
   void _fit() => _map.fit(_visible.map((p) => p.position).toList());
+
+  void _select(RouteSegment? segment) {
+    setState(() => _selected = segment);
+    _fit();
+  }
+
+  static String _duration(Duration d) {
+    if (d.inMinutes < 60) return '${d.inMinutes}분';
+    final m = d.inMinutes % 60;
+    return m == 0 ? '${d.inHours}시간' : '${d.inHours}시간 $m분';
+  }
+
+  static String _km(double meters) =>
+      meters < 1000 ? '${meters.round()}m' : '${(meters / 1000).toStringAsFixed(1)}km';
 
   Future<void> _pickDay() async {
     final picked = await showDatePicker(
@@ -110,6 +129,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final visible = _visible;
     final line = visible.map((p) => p.position).toList();
+    final selected = _selected;
     final scheme = Theme.of(context).colorScheme;
     final time = DateFormat('HH:mm');
     final days = [for (var i = 0; i < _days; i++) _today().subtract(Duration(days: i))];
@@ -144,7 +164,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
                           avatar: CircleAvatar(
-                            child: Text(m.displayName.isEmpty ? '?' : m.displayName.characters.first),
+                            child: Text(m.badge),
                           ),
                           label: Text(m.uid == Backend.uid ? '나' : m.displayName),
                           selected: m.uid == _uid,
@@ -184,46 +204,52 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   controller: _map,
                   initialZoom: 13,
                   onReady: _fit,
-                  path: line,
-                  pathColor: scheme.primary,
+                  lines: [
+                    // 구간을 골랐으면 하루 전체 경로는 흐리게, 고른 구간은 진하게
+                    MapLine(
+                      id: 'day',
+                      points: _points.map((p) => p.position).toList(),
+                      color: selected == null ? scheme.primary : scheme.outlineVariant,
+                      width: selected == null ? 6 : 4,
+                    ),
+                    if (selected != null && !selected.isStay)
+                      MapLine(id: 'selected', points: line, color: scheme.primary, width: 7),
+                  ],
                   pins: [
-                    if (line.isNotEmpty)
+                    if (selected == null)
+                      for (final (i, seg) in _segments.where((s) => s.isStay).indexed)
+                        MapPin(
+                          id: 'stay$i',
+                          position: seg.center,
+                          label: '${time.format(seg.start)}~${time.format(seg.end)}',
+                          color: scheme.secondary,
+                        ),
+                    if (selected != null && selected.isStay)
                       MapPin(
-                        id: 'start',
-                        position: line.first,
-                        label: '출발 ${time.format(visible.first.time)}',
-                        color: scheme.tertiary,
-                      ),
-                    if (line.length > 1)
-                      MapPin(
-                        id: 'end',
-                        position: line.last,
-                        label: '마지막 ${time.format(visible.last.time)}',
-                        color: scheme.error,
-                      ),
+                        id: 'stay',
+                        position: selected.center,
+                        label: '${time.format(selected.start)}~${time.format(selected.end)} 머묾',
+                        color: scheme.secondary,
+                      )
+                    else ...[
+                      if (line.isNotEmpty)
+                        MapPin(
+                          id: 'start',
+                          position: line.first,
+                          label: '출발 ${time.format(visible.first.time)}',
+                          color: scheme.tertiary,
+                        ),
+                      if (line.length > 1)
+                        MapPin(
+                          id: 'end',
+                          position: line.last,
+                          label: '${selected == null ? '마지막' : '도착'} ${time.format(visible.last.time)}',
+                          color: scheme.error,
+                        ),
+                    ],
                   ],
                 ),
                 if (_loading) const LinearProgressIndicator(),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Row(
-              children: [
-                Text('${_hours.start.round()}시'),
-                Expanded(
-                  child: RangeSlider(
-                    values: _hours,
-                    min: 0,
-                    max: 24,
-                    divisions: 24,
-                    labels: RangeLabels('${_hours.start.round()}시', '${_hours.end.round()}시'),
-                    onChanged: (v) => setState(() => _hours = v),
-                    onChangeEnd: (_) => _fit(),
-                  ),
-                ),
-                Text('${_hours.end.round()}시'),
               ],
             ),
           ),
@@ -231,23 +257,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
             flex: 2,
             child: _error != null
                 ? Center(child: Text(_error!))
-                : visible.isEmpty
-                    ? Center(
-                        child: Text(_loading ? '불러오는 중…' : '이 시간대에는 기록된 이동경로가 없어요'),
-                      )
-                    : ListView.builder(
-                        itemCount: visible.length,
-                        itemBuilder: (context, i) {
-                          final p = visible[visible.length - 1 - i];
-                          return ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.place_outlined),
-                            title: Text(time.format(p.time)),
+                : _points.isEmpty
+                    ? Center(child: Text(_loading ? '불러오는 중…' : '이 날은 기록된 이동경로가 없어요'))
+                    : ListView(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        children: [
+                          ListTile(
+                            selected: selected == null,
+                            leading: const Icon(Icons.route),
+                            title: const Text('하루 전체'),
                             subtitle: Text(
-                                '${p.position.latitude.toStringAsFixed(5)}, ${p.position.longitude.toStringAsFixed(5)}'),
-                            onTap: () => _map.moveTo(p.position, zoom: 17),
-                          );
-                        },
+                                '${time.format(_points.first.time)} ~ ${time.format(_points.last.time)}'
+                                ' · 이동 ${_segments.where((s) => !s.isStay).length}번'),
+                            onTap: () => _select(null),
+                          ),
+                          const Divider(height: 1),
+                          for (final seg in _segments)
+                            ListTile(
+                              selected: identical(seg, selected),
+                              leading: Icon(seg.isStay ? Icons.place : Icons.directions_walk),
+                              title: Text('${time.format(seg.start)} ~ ${time.format(seg.end)}'),
+                              subtitle: Text(seg.isStay
+                                  ? '머묾 · ${_duration(seg.duration)}'
+                                  : '이동 · ${_km(seg.distanceMeters)} · ${_duration(seg.duration)}'),
+                              onTap: () => _select(seg),
+                            ),
+                        ],
                       ),
           ),
         ],

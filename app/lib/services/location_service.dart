@@ -50,7 +50,8 @@ class LocationService {
     _heartbeatTimer = Timer.periodic(_heartbeat, (_) async {
       if (_lastUpload != null && DateTime.now().difference(_lastUpload!) < _heartbeat) return;
       try {
-        await _onPosition(await Geolocator.getCurrentPosition());
+        // 한 자리에 머무는 동안에도 이동경로에 점을 남겨 "머문 곳"을 알 수 있게 한다.
+        await _onPosition(await Geolocator.getCurrentPosition(), force: true);
       } catch (e) {
         debugPrint('heartbeat failed: $e');
       }

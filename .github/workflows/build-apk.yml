@@ -51,6 +51,10 @@ jobs:
         run: flutter analyze
         working-directory: app
 
+      - name: Test
+        run: flutter test
+        working-directory: app
+
       - name: Build APK
         env:
           NAVER_MAP_CLIENT_ID: ${{ secrets.NAVER_MAP_CLIENT_ID }}
