@@ -39,7 +39,7 @@ class AuthService {
     final user = cred.user!;
     final profile = await Backend.userDoc(user.uid).get();
     if (!profile.exists || profile.data()?['displayName'] == null) {
-      // 구글 이름은 첫 화면(NameSetupScreen)에서 확인·수정받는다.
+      // 구글 이름은 첫 화면(ProfileScreen)에서 확인·수정받는다.
       await _createProfile(user.uid, account.displayName ?? user.displayName ?? '',
           nameConfirmed: false);
     }
@@ -53,11 +53,11 @@ class AuthService {
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-  /// 그룹 멤버에게 보일 이름을 저장한다.
-  static Future<void> setDisplayName(String name) async {
+  /// 그룹 멤버에게 보일 이름과 이모지를 저장한다.
+  static Future<void> setProfile({required String name, required String avatar}) async {
     await Backend.auth.currentUser!.updateDisplayName(name);
-    await Backend.userDoc(Backend.uid)
-        .set({'displayName': name, 'nameConfirmed': true}, SetOptions(merge: true));
+    await Backend.userDoc(Backend.uid).set(
+        {'displayName': name, 'avatar': avatar, 'nameConfirmed': true}, SetOptions(merge: true));
   }
 
   static Future<void> resetPassword(String email) =>

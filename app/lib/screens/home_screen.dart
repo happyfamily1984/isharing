@@ -12,7 +12,7 @@ import '../services/location_service.dart';
 import '../services/messaging_service.dart';
 import '../services/plan.dart';
 import 'disclosure_screen.dart';
-import 'name_setup_screen.dart';
+import 'profile_screen.dart';
 import 'groups_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -58,9 +58,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final me = await Backend.userDoc(Backend.uid).get();
     if (!mounted) return;
     final data = me.data() ?? const <String, dynamic>{};
-    // 구글로 가입한 사용자는 처음 한 번 이름을 정한다.
-    if (data['nameConfirmed'] != true && !AuthService.usesPassword) {
-      await NameSetupScreen.show(context, (data['displayName'] as String?) ?? '');
+    // 처음 한 번 이름과 지도에 보일 캐릭터를 정한다.
+    if (data['avatar'] == null ||
+        (data['nameConfirmed'] != true && !AuthService.usesPassword)) {
+      await ProfileScreen.show(
+        context,
+        name: (data['displayName'] as String?) ?? '',
+        avatar: data['avatar'] as String?,
+        required: true,
+      );
       if (!mounted) return;
     }
     if ((data['sharing'] as bool?) ?? true) await ensureSharing(context);
@@ -174,6 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       id: m.uid,
                       position: m.position!,
                       label: m.uid == Backend.uid ? '나' : m.displayName,
+                      emoji: m.badge,
                       subLabel: m.isOnline ? null : '마지막 위치',
                       color: m.uid == Backend.uid
                           ? Theme.of(context).colorScheme.tertiary
@@ -343,11 +350,16 @@ class MemberAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final online = member.isOnline && member.sharing;
+    final emoji = member.avatar != null;
     return CircleAvatar(
       radius: radius,
       backgroundColor: online ? scheme.primary : scheme.outline,
-      foregroundColor: online ? scheme.onPrimary : scheme.surface,
-      child: Text(member.displayName.characters.first),
+      child: CircleAvatar(
+        radius: radius - 2.5,
+        backgroundColor: emoji ? scheme.surface : (online ? scheme.primary : scheme.outline),
+        foregroundColor: online ? scheme.onPrimary : scheme.surface,
+        child: Text(member.badge, style: TextStyle(fontSize: emoji ? radius * 1.1 : null)),
+      ),
     );
   }
 }

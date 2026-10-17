@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 
 import '../config.dart';
 
@@ -12,6 +12,7 @@ class MapPin {
     required this.label,
     required this.color,
     this.subLabel,
+    this.emoji,
     this.onTap,
   });
 
@@ -20,7 +21,20 @@ class MapPin {
   final String label;
   final String? subLabel;
   final Color color;
+
+  /// 지정하면 기본 핀 대신 이모지 말풍선으로 표시한다.
+  final String? emoji;
   final VoidCallback? onTap;
+}
+
+/// 지도에 그릴 선 (이동경로).
+class MapLine {
+  const MapLine({required this.id, required this.points, required this.color, this.width = 6});
+
+  final String id;
+  final List<LatLng> points;
+  final Color color;
+  final double width;
 }
 
 /// 화면에서 지도 카메라를 움직일 때 쓰는 컨트롤러.
@@ -50,8 +64,7 @@ class FamilyMap extends StatefulWidget {
     super.key,
     required this.controller,
     this.pins = const [],
-    this.path = const [],
-    this.pathColor,
+    this.lines = const [],
     this.initialCenter = const LatLng(37.5665, 126.9780), // 서울시청
     this.initialZoom = 11,
     this.onReady,
@@ -59,8 +72,7 @@ class FamilyMap extends StatefulWidget {
 
   final FamilyMapController controller;
   final List<MapPin> pins;
-  final List<LatLng> path;
-  final Color? pathColor;
+  final List<MapLine> lines;
   final LatLng initialCenter;
   final double initialZoom;
   final VoidCallback? onReady;
@@ -71,6 +83,20 @@ class FamilyMap extends StatefulWidget {
 
 class _FamilyMapState extends State<FamilyMap> {
   NaverMapController? _map;
+  final _iconCache = <String, NOverlayImage>{};
+  int _syncGeneration = 0;
+
+  Future<NOverlayImage> _emojiIcon(String emoji, Color color) async {
+    final key = '$emoji|${color.toARGB32()}';
+    final cached = _iconCache[key];
+    if (cached != null) return cached;
+    final icon = await NOverlayImage.fromWidget(
+      widget: _EmojiPin(emoji: emoji, color: color),
+      size: _EmojiPin.size,
+      context: context,
+    );
+    return _iconCache[key] = icon;
+  }
 
   @override
   void didUpdateWidget(FamilyMap oldWidget) {
@@ -81,31 +107,36 @@ class _FamilyMapState extends State<FamilyMap> {
   Future<void> _syncOverlays() async {
     final map = _map;
     if (map == null) return;
+    final generation = ++_syncGeneration;
     final overlays = <NAddableOverlay>{};
-    if (widget.path.length > 1) {
+    for (final line in widget.lines) {
+      if (line.points.length < 2) continue;
       overlays.add(NPathOverlay(
-        id: 'path',
-        coords: widget.path.map(_n),
-        width: 6,
-        color: widget.pathColor ?? Theme.of(context).colorScheme.primary,
+        id: line.id,
+        coords: line.points.map(_n),
+        width: line.width,
+        color: line.color,
         outlineWidth: 1,
         outlineColor: Colors.white,
       ));
     }
     for (final pin in widget.pins) {
+      final emoji = pin.emoji;
       final marker = NMarker(
         id: pin.id,
         position: _n(pin.position),
-        iconTintColor: pin.color,
+        icon: emoji == null ? null : await _emojiIcon(emoji, pin.color),
+        iconTintColor: emoji == null ? pin.color : Colors.transparent,
         caption: NOverlayCaption(text: pin.label, textSize: 13),
         subCaption: pin.subLabel == null
             ? null
             : NOverlayCaption(text: pin.subLabel!, textSize: 11, color: Colors.black54),
-        isHideCollidedCaptions: false,
       );
       if (pin.onTap != null) marker.setOnTapListener((_) => pin.onTap!());
       overlays.add(marker);
     }
+    // 아이콘을 만드는 동안 더 새로운 갱신이 들어왔으면 이번 결과는 버린다.
+    if (!mounted || generation != _syncGeneration) return;
     // 멤버 수가 적어 매번 다시 그려도 충분히 가볍다.
     await map.clearOverlays();
     if (overlays.isNotEmpty) await map.addOverlayAll(overlays);
@@ -144,4 +175,59 @@ class _FamilyMapState extends State<FamilyMap> {
       },
     );
   }
+}
+
+/// 이모지 말풍선 핀. 아래 꼬리 끝이 실제 위치를 가리킨다.
+class _EmojiPin extends StatelessWidget {
+  const _EmojiPin({required this.emoji, required this.color});
+
+  static const size = Size(52, 60);
+
+  final String emoji;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.fromSize(
+      size: size,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          Positioned(
+            bottom: 0,
+            child: CustomPaint(size: const Size(14, 10), painter: _TailPainter(color)),
+          ),
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: color, width: 3.5),
+            ),
+            alignment: Alignment.center,
+            child: Text(emoji, style: const TextStyle(fontSize: 28, height: 1.1)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TailPainter extends CustomPainter {
+  _TailPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_TailPainter old) => old.color != color;
 }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
 
 /// 이 시간 이상 위치 갱신이 없으면 오프라인(전원 꺼짐/네트워크 끊김 등)으로 보고 마지막 위치를 표시한다.
@@ -8,6 +9,7 @@ class Member {
   Member({
     required this.uid,
     required this.displayName,
+    this.avatar,
     required this.sharing,
     this.position,
     this.accuracy,
@@ -18,6 +20,9 @@ class Member {
 
   final String uid;
   final String displayName;
+
+  /// 프로필에서 고른 이모지. 없으면 이름 첫 글자를 쓴다.
+  final String? avatar;
   final bool sharing;
   final LatLng? position;
   final double? accuracy;
@@ -31,6 +36,7 @@ class Member {
     return Member(
       uid: doc.id,
       displayName: (d['displayName'] as String?) ?? '이름 없음',
+      avatar: d['avatar'] as String?,
       sharing: (d['sharing'] as bool?) ?? true,
       position: loc == null
           ? null
@@ -41,6 +47,10 @@ class Member {
       charging: (d['charging'] as bool?) ?? false,
     );
   }
+
+  /// 화면에 표시할 아이콘 (이모지 또는 이름 첫 글자)
+  String get badge =>
+      avatar ?? (displayName.isEmpty ? '?' : displayName.characters.first);
 
   bool get isOnline =>
       updatedAt != null && DateTime.now().difference(updatedAt!) < offlineThreshold;
