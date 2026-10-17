@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../models/member.dart';
 import '../services/backend.dart';
 import '../services/group_service.dart';
-import '../widgets/map_tiles.dart';
+import '../widgets/family_map.dart';
 
 /// 멤버별 · 날짜별 · 시간대별 이동경로.
 class HistoryScreen extends StatefulWidget {
@@ -28,7 +26,7 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final _map = MapController();
+  final _map = FamilyMapController();
   late String _uid = widget.initialUid;
   late DateTime _day = _today();
   RangeValues _hours = const RangeValues(0, 24);
@@ -88,15 +86,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return h >= _hours.start && h <= _hours.end;
       }).toList();
 
-  void _fit() {
-    final pts = _visible.map((p) => p.position).toList();
-    if (pts.isEmpty) return;
-    if (pts.length == 1) {
-      _map.move(pts.first, 16);
-      return;
-    }
-    _map.fitCamera(CameraFit.coordinates(coordinates: pts, padding: const EdgeInsets.all(48)));
-  }
+  void _fit() => _map.fit(_visible.map((p) => p.position).toList());
 
   Future<void> _pickDay() async {
     final picked = await showDatePicker(
@@ -190,34 +180,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
             flex: 3,
             child: Stack(
               children: [
-                FlutterMap(
-                  mapController: _map,
-                  options: MapOptions(
-                    initialCenter: line.isNotEmpty ? line.first : const LatLng(37.5665, 126.9780),
-                    initialZoom: 13,
-                  ),
-                  children: [
-                    const AppTileLayer(),
-                    PolylineLayer(polylines: [
-                      if (line.length > 1)
-                        Polyline(points: line, strokeWidth: 5, color: scheme.primary),
-                    ]),
-                    MarkerLayer(markers: [
-                      if (line.isNotEmpty)
-                        Marker(
-                          point: line.first,
-                          child: Icon(Icons.trip_origin, color: scheme.tertiary),
-                        ),
-                      if (line.length > 1)
-                        Marker(
-                          point: line.last,
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.topCenter,
-                          child: Icon(Icons.location_on, size: 40, color: scheme.error),
-                        ),
-                    ]),
-                    const AppMapAttribution(),
+                FamilyMap(
+                  controller: _map,
+                  initialZoom: 13,
+                  onReady: _fit,
+                  path: line,
+                  pathColor: scheme.primary,
+                  pins: [
+                    if (line.isNotEmpty)
+                      MapPin(
+                        id: 'start',
+                        position: line.first,
+                        label: '출발 ${time.format(visible.first.time)}',
+                        color: scheme.tertiary,
+                      ),
+                    if (line.length > 1)
+                      MapPin(
+                        id: 'end',
+                        position: line.last,
+                        label: '마지막 ${time.format(visible.last.time)}',
+                        color: scheme.error,
+                      ),
                   ],
                 ),
                 if (_loading) const LinearProgressIndicator(),
@@ -262,7 +245,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             title: Text(time.format(p.time)),
                             subtitle: Text(
                                 '${p.position.latitude.toStringAsFixed(5)}, ${p.position.longitude.toStringAsFixed(5)}'),
-                            onTap: () => _map.move(p.position, 17),
+                            onTap: () => _map.moveTo(p.position, zoom: 17),
                           );
                         },
                       ),

@@ -95,6 +95,13 @@ main 브랜치에 코드가 합쳐지면 자동 실행되고, Actions 탭에서 
 서비스 계정 키는 Google Cloud 콘솔 > IAM > 서비스 계정에서 만들고 역할 **편집자(Editor)** 와
 **서비스 계정 사용자** 를 부여합니다.
 
+### 네이버 지도 설정
+
+1. [네이버 클라우드 플랫폼 콘솔](https://console.ncloud.com/maps/application) > Services > Application Services > **Maps** > Application 등록
+2. API 선택에서 **Dynamic Map** 체크, 서비스 환경에 Android 패키지 `com.happyfamily.familylocator` (iOS 는 번들 ID) 입력
+3. 등록한 Application 의 **인증 정보 > Client ID** 를 GitHub Secret `NAVER_MAP_CLIENT_ID` 로 저장
+4. 로컬 빌드 시: `flutter run --dart-define=NAVER_MAP_CLIENT_ID=발급받은ID`
+
 ### 보안 규칙 테스트
 
 ```bash
@@ -112,5 +119,4 @@ cd rules-test && npm install && npm test
   사용자가 방해금지 모드에서 "알람"까지 막아두면 울리지 않을 수 있습니다.
 - **휴대폰 재시작 후**: Android에서 재부팅하면 앱을 한 번 열어야 위치 공유가 다시 시작됩니다.
   (부팅 시 자동 시작은 추후 과제)
-- **지도 타일**: 지금은 OpenStreetMap 공개 타일을 씁니다. 사용자가 늘면 OSM 정책상 상용 타일
-  제공자(MapTiler, Stadia, 네이버/카카오 지도 등)로 바꿔야 합니다 → `app/lib/config.dart`.
+- **지도**: 네이버 지도(`flutter_naver_map`)를 씁니다. 아래 "네이버 지도 설정" 참고.
