@@ -90,7 +90,9 @@ class SettingsScreen extends StatelessWidget {
       await AuthService.deleteAccount(password: password);
       navigator.popUntil((r) => r.isFirst);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
+      if (!Backend.isCancel(e)) {
+        messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
+      }
     }
   }
 
