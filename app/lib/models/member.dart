@@ -72,7 +72,9 @@ class Member {
   /// 목록에 보여줄 한 줄 상태
   String get statusText {
     if (!sharing) return '위치 공유를 잠시 멈췄어요';
-    if (position == null || updatedAt == null) return '아직 위치 정보가 없어요';
+    if (position == null || updatedAt == null) {
+      return '위치 공유가 아직 시작되지 않았어요 (그 폰에서 위치 권한·GPS 확인)';
+    }
     final acc = accuracy == null ? '' : ' · 오차 ${accuracy!.round()}m';
     if (isOnline) return '위치 $updatedLabel$acc';
     final lowBattery = battery != null && battery! <= 5 && !charging;

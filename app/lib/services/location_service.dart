@@ -8,6 +8,9 @@ import 'package:geolocator/geolocator.dart';
 
 import 'backend.dart';
 
+/// 위치 공유가 시작되지 못한 이유 (홈 화면 경고에 표시)
+enum SharingProblem { none, serviceOff, permissionDenied, permissionDeniedForever }
+
 /// 내 위치를 수집해 서버에 올린다.
 ///
 /// - users/{uid}.lastLocation : 최신 위치 (전원이 꺼져도 마지막 위치가 남는다)
@@ -40,16 +43,28 @@ class LocationService {
 
   final running = ValueNotifier<bool>(false);
 
+  /// 공유를 켰는데 시작하지 못한 이유
+  final problem = ValueNotifier<SharingProblem>(SharingProblem.none);
+
   /// 권한 상태. disclosure 화면에서 사용.
   static Future<LocationPermission> permission() => Geolocator.checkPermission();
 
   Future<bool> start() async {
     if (running.value) return true;
-    if (!await Geolocator.isLocationServiceEnabled()) return false;
-    final perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      problem.value = SharingProblem.serviceOff;
       return false;
     }
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      problem.value = SharingProblem.permissionDenied;
+      return false;
+    }
+    if (perm == LocationPermission.deniedForever) {
+      problem.value = SharingProblem.permissionDeniedForever;
+      return false;
+    }
+    problem.value = SharingProblem.none;
 
     _positionSub = Geolocator.getPositionStream(locationSettings: _settings())
         .listen(_onPosition, onError: (Object e) => debugPrint('location error: $e'));
@@ -86,6 +101,7 @@ class LocationService {
     _batterySub = null;
     _heartbeatTimer = null;
     running.value = false;
+    problem.value = SharingProblem.none;
   }
 
   /// 한 번 정확하게 측정한다 (GPS 를 켜서 최대 20초까지 기다림).
