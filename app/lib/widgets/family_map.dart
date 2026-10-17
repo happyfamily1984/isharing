@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:latlong2/latlong.dart' show LatLng;
+import 'package:latlong2/latlong.dart' show Distance, LatLng;
 
 import '../config.dart';
 
@@ -37,21 +37,61 @@ class MapLine {
   final double width;
 }
 
+/// 지도에 그릴 원 (등록한 장소의 도착 반경).
+class MapCircle {
+  const MapCircle({required this.id, required this.center, required this.radius, required this.color});
+
+  final String id;
+  final LatLng center;
+  final double radius;
+  final Color color;
+}
+
 /// 화면에서 지도 카메라를 움직일 때 쓰는 컨트롤러.
 class FamilyMapController {
   NaverMapController? _map;
+  void Function(String what, Object error)? _onError;
 
-  Future<void> moveTo(LatLng target, {double zoom = 15}) async {
-    await _map?.updateCamera(NCameraUpdate.scrollAndZoomTo(target: _n(target), zoom: zoom));
+  Future<void> _update(NCameraUpdate update) async {
+    final map = _map;
+    if (map == null) return;
+    update.setAnimation(duration: const Duration(milliseconds: 600));
+    try {
+      await map.updateCamera(update);
+    } catch (e) {
+      _onError?.call('카메라 이동', e);
+    }
   }
 
-  /// 모든 점이 화면에 들어오게 맞춘다.
+  Future<void> moveTo(LatLng target, {double zoom = 15}) =>
+      _update(NCameraUpdate.scrollAndZoomTo(target: _n(target), zoom: zoom));
+
+  /// 지금 지도 화면 가운데 좌표
+  Future<LatLng?> center() async {
+    final map = _map;
+    if (map == null) return null;
+    final target = (await map.getCameraPosition()).target;
+    return LatLng(target.latitude, target.longitude);
+  }
+
+  /// 모든 점이 화면 가운데에 다 보이도록 위치와 확대 수준을 맞춘다.
+  /// 한 자리에 모여 있는 점(머문 곳)은 너무 확대되지 않게 적당한 수준으로 보여준다.
   Future<void> fit(List<LatLng> points) async {
     if (points.isEmpty) return;
-    if (points.length == 1) return moveTo(points.first, zoom: 16);
-    await _map?.updateCamera(NCameraUpdate.fitBounds(
-      NLatLngBounds.from(points.map(_n)),
-      padding: const EdgeInsets.all(56),
+    final bounds = NLatLngBounds.from(points.map(_n));
+    const distance = Distance();
+    final spanMeters = distance(
+      LatLng(bounds.southWest.latitude, bounds.southWest.longitude),
+      LatLng(bounds.northEast.latitude, bounds.northEast.longitude),
+    );
+    if (spanMeters < 150) {
+      final c = bounds.center;
+      return moveTo(LatLng(c.latitude, c.longitude), zoom: 16);
+    }
+    // 위아래는 핀 이름표가 잘리지 않게 여백을 더 둔다.
+    await _update(NCameraUpdate.fitBounds(
+      bounds,
+      padding: const EdgeInsets.fromLTRB(48, 72, 48, 72),
     ));
   }
 }
@@ -65,6 +105,8 @@ class FamilyMap extends StatefulWidget {
     required this.controller,
     this.pins = const [],
     this.lines = const [],
+    this.circles = const [],
+    this.onCameraIdle,
     this.initialCenter = const LatLng(37.5665, 126.9780), // 서울시청
     this.initialZoom = 11,
     this.onReady,
@@ -73,6 +115,10 @@ class FamilyMap extends StatefulWidget {
   final FamilyMapController controller;
   final List<MapPin> pins;
   final List<MapLine> lines;
+  final List<MapCircle> circles;
+
+  /// 사용자가 지도를 움직이다 멈췄을 때
+  final VoidCallback? onCameraIdle;
   final LatLng initialCenter;
   final double initialZoom;
   final VoidCallback? onReady;
@@ -84,7 +130,6 @@ class FamilyMap extends StatefulWidget {
 class _FamilyMapState extends State<FamilyMap> {
   NaverMapController? _map;
   final _iconCache = <String, NOverlayImage>{};
-  int _syncGeneration = 0;
 
   Future<NOverlayImage> _emojiIcon(String emoji, Color color) async {
     final key = '$emoji|${color.toARGB32()}';
@@ -104,16 +149,43 @@ class _FamilyMapState extends State<FamilyMap> {
     _syncOverlays();
   }
 
-  Future<void> _syncOverlays() async {
+  /// 갱신 요청이 겹치면 지우기·그리기가 뒤섞이므로 하나씩 순서대로 처리한다.
+  Future<void> _syncChain = Future.value();
+  bool _syncPending = false;
+
+  void _syncOverlays() {
+    if (_syncPending) return; // 이미 대기 중인 갱신이 최신 위젯 상태로 그린다.
+    _syncPending = true;
+    _syncChain = _syncChain.then((_) async {
+      _syncPending = false;
+      try {
+        await _drawOverlays();
+      } catch (e) {
+        _reportError('지도 그리기', e);
+      }
+    });
+  }
+
+  Future<void> _drawOverlays() async {
     final map = _map;
-    if (map == null) return;
-    final generation = ++_syncGeneration;
-    final overlays = <NAddableOverlay>{};
+    if (map == null || !mounted) return;
+    final overlays = <NAddableOverlay>[];
+    for (final c in widget.circles) {
+      overlays.add(NCircleOverlay(
+        id: c.id,
+        center: _n(c.center),
+        radius: c.radius,
+        color: c.color.withValues(alpha: 0.15),
+        outlineColor: c.color.withValues(alpha: 0.6),
+        outlineWidth: 1.5,
+      ));
+    }
     for (final line in widget.lines) {
-      if (line.points.length < 2) continue;
+      final coords = _dedupe(line.points);
+      if (coords.length < 2) continue;
       overlays.add(NPathOverlay(
         id: line.id,
-        coords: line.points.map(_n),
+        coords: coords,
         width: line.width,
         color: line.color,
         outlineWidth: 1,
@@ -135,11 +207,39 @@ class _FamilyMapState extends State<FamilyMap> {
       if (pin.onTap != null) marker.setOnTapListener((_) => pin.onTap!());
       overlays.add(marker);
     }
-    // 아이콘을 만드는 동안 더 새로운 갱신이 들어왔으면 이번 결과는 버린다.
-    if (!mounted || generation != _syncGeneration) return;
+    if (!mounted) return;
     // 멤버 수가 적어 매번 다시 그려도 충분히 가볍다.
     await map.clearOverlays();
-    if (overlays.isNotEmpty) await map.addOverlayAll(overlays);
+    // 하나가 실패해도 나머지는 보이도록 따로따로 추가한다.
+    for (final overlay in overlays) {
+      try {
+        await map.addOverlay(overlay);
+      } catch (e) {
+        _reportError('${overlay.info.type.name} ${overlay.info.id}', e);
+      }
+    }
+  }
+
+  /// 연속으로 같은 좌표가 찍힌 점은 하나로 줄인다 (선 그리기 오류 방지).
+  static List<NLatLng> _dedupe(List<LatLng> points) {
+    final out = <NLatLng>[];
+    for (final p in points) {
+      final n = _n(p);
+      if (out.isEmpty || out.last.latitude != n.latitude || out.last.longitude != n.longitude) {
+        out.add(n);
+      }
+    }
+    return out;
+  }
+
+  /// 테스트 중 원인 파악을 위해 지도 오류를 화면에 보여준다.
+  void _reportError(String what, Object e) {
+    debugPrint('지도 오류 ($what): $e');
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+      content: Text('지도 표시 오류 ($what): $e'),
+      duration: const Duration(seconds: 8),
+    ));
   }
 
   @override
@@ -167,9 +267,11 @@ class _FamilyMapState extends State<FamilyMap> {
         indoorEnable: false,
         consumeSymbolTapEvents: false,
       ),
+      onCameraIdle: widget.onCameraIdle,
       onMapReady: (controller) {
         _map = controller;
         widget.controller._map = controller;
+        widget.controller._onError = _reportError;
         _syncOverlays();
         widget.onReady?.call();
       },

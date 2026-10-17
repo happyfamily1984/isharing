@@ -2,9 +2,20 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2";
+import {
+  LatLng,
+  MAX_ACCURACY_M,
+  distanceMeters,
+  normalizeDistanceKm,
+  pairState,
+  placeState,
+  TogetherState,
+  updateTogether,
+  watchKey,
+} from "./geo";
 
 initializeApp();
 setGlobalOptions({ region: "asia-northeast3" }); // 서울
@@ -184,7 +195,10 @@ async function removeFromGroup(groupId: string, targetUid: string) {
     if (group.get("ownerId") === targetUid) update.ownerId = remaining[0];
     tx.update(groupRef, update);
   });
-  if (deletedCode) await db.collection("inviteCodes").doc(deletedCode).delete();
+  if (deletedCode) {
+    await db.collection("inviteCodes").doc(deletedCode).delete();
+    await db.recursiveDelete(groupRef); // 남은 장소·가입요청 정리
+  }
 }
 
 export const leaveGroup = onCall(async (req) => {
@@ -211,6 +225,16 @@ export const deleteMyData = onCall(async (req) => {
   const groups = await db.collection("groups").where("members", "array-contains", uid).get();
   for (const g of groups.docs) await removeFromGroup(g.id, uid);
   await db.recursiveDelete(db.collection("users").doc(uid));
+  // 위치 알림 상태 정리
+  await db.collection("geoState").doc(uid).delete();
+  const watches = await Promise.all([
+    db.collection("distState").where("viewer", "==", uid).get(),
+    db.collection("distState").where("target", "==", uid).get(),
+    db.collection("together").where("members", "array-contains", uid).get(),
+  ]);
+  const batch = db.batch();
+  watches.flatMap((q) => q.docs).forEach((d) => batch.delete(d.ref));
+  await batch.commit();
   return { ok: true };
 });
 
@@ -301,3 +325,159 @@ export const cleanupOldLocations = onSchedule({ schedule: "every day 04:00", tim
   expired.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
 });
+
+// ---------------------------------------------------------------------------
+// 위치 알림: 장소 도착, 가족과의 거리
+// 위치가 바뀔 때마다 서버에서 판단하므로 앱이 꺼져 있어도 동작한다.
+// 각자 설정(users/{uid}.alertPlaces / alertDistance / alertDistanceKm)을 따른다.
+// ---------------------------------------------------------------------------
+
+type UserData = FirebaseFirestore.DocumentData;
+
+/** 이보다 오래된 위치는 거리 비교에 쓰지 않는다 (전원 꺼짐 등) */
+const STALE_LOCATION_MS = 30 * 60 * 1000;
+
+async function notify(user: UserData | undefined, title: string, body: string, type: string) {
+  const token = user?.fcmToken as string | undefined;
+  if (!token) return;
+  await getMessaging()
+    .send({
+      token,
+      notification: { title, body },
+      data: { type },
+      android: { priority: "high", notification: { channelId: "general" } },
+      apns: { payload: { aps: { sound: "default" } } },
+    })
+    .catch((e) => console.warn("notify failed", e));
+}
+
+function displayName(user: UserData | undefined): string {
+  return (user?.displayName as string | undefined) || "가족";
+}
+
+export const onLocationChanged = onDocumentUpdated("users/{uid}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  const loc = after?.lastLocation as (LatLng & { accuracy?: number }) | undefined;
+  const prev = before?.lastLocation as LatLng | undefined;
+  if (!after || !loc) return;
+  if (prev && prev.lat === loc.lat && prev.lng === loc.lng) return; // 위치 외 변경
+  if (after.sharing === false) return;
+  if ((loc.accuracy ?? 0) > MAX_ACCURACY_M) return;
+
+  const uid = event.params.uid;
+  await Promise.all([
+    checkPlaces(uid, after, loc),
+    checkDistances(uid, after, loc),
+  ]);
+});
+
+/** 그룹에 등록된 장소에 도착했는지 확인하고, 같은 그룹의 다른 가족에게 알린다. */
+async function checkPlaces(uid: string, me: UserData, loc: LatLng) {
+  const groupIds = (me.groupIds as string[] | undefined) ?? [];
+  if (groupIds.length === 0) return;
+
+  const stateRef = db.collection("geoState").doc(uid);
+  const prevInside = ((await stateRef.get()).get("inside") as Record<string, boolean>) ?? {};
+  const inside: Record<string, boolean> = {};
+  const arrivals: { members: string[]; name: string; emoji: string }[] = [];
+
+  for (const gid of groupIds) {
+    const groupRef = db.collection("groups").doc(gid);
+    const [group, places] = await Promise.all([groupRef.get(), groupRef.collection("places").get()]);
+    if (!group.exists) continue;
+    for (const p of places.docs) {
+      const key = `${gid}/${p.id}`;
+      const d = distanceMeters(loc, { lat: p.get("lat"), lng: p.get("lng") });
+      const r = placeState(prevInside[key], d, (p.get("radius") as number) ?? 150);
+      inside[key] = r.inside;
+      if (r.transition === "enter") {
+        arrivals.push({
+          members: group.get("members") as string[],
+          name: p.get("name") as string,
+          emoji: (p.get("emoji") as string) ?? "📍",
+        });
+      }
+    }
+  }
+  await stateRef.set({ inside, updatedAt: FieldValue.serverTimestamp() });
+
+  for (const a of arrivals) {
+    const others = a.members.filter((m) => m !== uid);
+    const users = await Promise.all(others.map((m) => db.collection("users").doc(m).get()));
+    await Promise.all(
+      users
+        .filter((u) => u.get("alertPlaces") !== false)
+        .map((u) =>
+          notify(u.data(), `${a.emoji} ${a.name} 도착`, `${displayName(me)}님이 ${a.name}에 도착했어요`, "place"),
+        ),
+    );
+  }
+}
+
+/**
+ * 나와 가족 사이 거리가 각자 정한 기준(기본 5km)을 넘거나 다시 들어오면 알린다.
+ * "보는 사람 → 대상" 방향마다 상태를 따로 둔다 (사람마다 기준 거리가 다를 수 있음).
+ */
+async function checkDistances(uid: string, me: UserData, loc: LatLng) {
+  const viewers = (me.viewers as string[] | undefined) ?? [];
+  await Promise.all(
+    viewers.map(async (otherUid) => {
+      const otherSnap = await db.collection("users").doc(otherUid).get();
+      const other = otherSnap.data();
+      const otherLoc = other?.lastLocation as LatLng | undefined;
+      const updatedAt = other?.updatedAt as Timestamp | undefined;
+      if (!other || !otherLoc || other.sharing === false) return;
+      if (!updatedAt || Date.now() - updatedAt.toMillis() > STALE_LOCATION_MS) return;
+
+      const d = distanceMeters(loc, otherLoc);
+      await Promise.all([
+        recordTogether(uid, otherUid, d, {
+          lat: (loc.lat + otherLoc.lat) / 2,
+          lng: (loc.lng + otherLoc.lng) / 2,
+        }),
+        updateWatch(otherUid, other, uid, me, d), // 가족이 나를 보는 방향
+        updateWatch(uid, me, otherUid, other, d), // 내가 가족을 보는 방향
+      ]);
+    }),
+  );
+}
+
+/** 두 가족이 함께 있었던 시간과 장소를 누적한다 (together/{두 사람 키}). */
+async function recordTogether(a: string, b: string, distance: number, meetingPoint: LatLng) {
+  const [x, y] = a < b ? [a, b] : [b, a];
+  const ref = db.collection("together").doc(`${x}_${y}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const prev = snap.exists ? (snap.data() as TogetherState) : undefined;
+    const next = updateTogether(prev, distance, Date.now(), meetingPoint);
+    tx.set(ref, { members: [x, y], ...next });
+  });
+}
+
+async function updateWatch(
+  viewerUid: string,
+  viewer: UserData,
+  targetUid: string,
+  target: UserData,
+  distance: number,
+) {
+  const ref = db.collection("distState").doc(watchKey(viewerUid, targetUid));
+  if (viewer.alertDistance === false) {
+    await ref.delete(); // 다시 켜면 현재 상태부터 새로 시작
+    return;
+  }
+  const km = normalizeDistanceKm(viewer.alertDistanceKm);
+  const snap = await ref.get();
+  const wasFar = snap.exists && snap.get("km") === km ? (snap.get("far") as boolean) : undefined;
+  const r = pairState(wasFar, distance, km);
+  if (snap.exists && wasFar === r.far) return; // 변화 없음: 쓰기 생략
+  await ref.set({ viewer: viewerUid, target: targetUid, far: r.far, km });
+
+  const name = displayName(target);
+  if (r.transition === "far") {
+    await notify(viewer, "거리 알림", `${name}님과 ${km}km 이상 멀어졌어요`, "distance");
+  } else if (r.transition === "near") {
+    await notify(viewer, "거리 알림", `${name}님이 ${km}km 이내에 있어요`, "distance");
+  }
+}

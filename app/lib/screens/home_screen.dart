@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../config.dart';
 import '../models/member.dart';
@@ -10,12 +12,15 @@ import '../services/backend.dart';
 import '../services/group_service.dart';
 import '../services/location_service.dart';
 import '../services/messaging_service.dart';
+import '../services/place_service.dart';
 import '../services/plan.dart';
+import '../services/together_service.dart';
 import 'disclosure_screen.dart';
 import 'profile_screen.dart';
 import 'groups_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+import 'together_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,17 +32,41 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _map = FamilyMapController();
   final _members = MembersController();
+  final _places = PlacesController();
   List<Group> _groups = const [];
   StreamSubscription<List<Group>>? _groupsSub;
   StreamSubscription<String>? _ringSub;
+  StreamSubscription<String>? _alertSub;
+  Timer? _clock;
+  StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
+  Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _groupsSub = GroupService.myGroups().listen((g) => setState(() => _groups = g));
+    _groupsSub = GroupService.myGroups().listen((g) {
+      setState(() => _groups = g);
+      _places.setGroups(g.map((group) => group.id));
+    });
     _ringSub = MessagingService.incomingRings.listen(_onRing);
+    _alertSub = MessagingService.incomingAlerts.listen((text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ));
+    });
     _members.addListener(_onMembersChanged);
+    _togetherSub = TogetherService.mine().listen(
+      (t) => setState(() => _together = t),
+      onError: (Object e) => debugPrint('함께한 시간 불러오기 실패: $e'),
+    );
+    // "3분 전", 온라인/오프라인 표시가 저절로 바뀌도록 30초마다 다시 그린다
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _startup());
   }
 
@@ -45,7 +74,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _groupsSub?.cancel();
     _ringSub?.cancel();
+    _alertSub?.cancel();
+    _clock?.cancel();
+    _togetherSub?.cancel();
     _members.dispose();
+    _places.dispose();
     super.dispose();
   }
 
@@ -69,7 +102,40 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted) return;
     }
-    if ((data['sharing'] as bool?) ?? true) await ensureSharing(context);
+    if ((data['sharing'] as bool?) ?? true) {
+      final started = await ensureSharing(context);
+      if (started && mounted) await _checkPreciseLocation();
+    }
+  }
+
+  /// "대략적인 위치"만 허용돼 있으면 오차가 수 km 라서 정확한 위치를 켜도록 안내한다.
+  Future<void> _checkPreciseLocation() async {
+    if (!await LocationService.isApproximateOnly() || !mounted) return;
+    if (Platform.isIOS) {
+      await Geolocator.requestTemporaryFullAccuracy(purposeKey: 'FamilyLocation');
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.gps_fixed),
+        title: const Text('정확한 위치를 켜주세요'),
+        content: const Text('지금은 "대략적인 위치"만 허용돼 있어서 가족에게 보이는 내 위치가 '
+            '1~3km 까지 틀릴 수 있어요.\n\n'
+            '설정 > 권한 > 위치에서 "정확한 위치 사용"을 켜주세요.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('나중에')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('설정 열기')),
+        ],
+      ),
+    );
+    if (go == true) await Geolocator.openAppSettings();
+  }
+
+  String _listSubtitle(Member m) {
+    final today = _together[m.uid]?.on(DateTime.now()) ?? Duration.zero;
+    if (m.uid == Backend.uid || today.inMinutes < 1) return m.statusText;
+    return '${m.statusText}\n🤝 오늘 함께 ${formatDuration(today)}';
   }
 
   void _onMembersChanged() {
@@ -125,9 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => _MemberSheet(
         member: m,
         isMe: m.uid == Backend.uid,
+        together: _together[m.uid],
         onHistory: () {
           Navigator.pop(ctx);
           _openHistory(m.uid);
+        },
+        onTogether: () {
+          Navigator.pop(ctx);
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => TogetherScreen(member: m, places: _places),
+          ));
         },
       ),
     );
@@ -159,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: ListenableBuilder(
-        listenable: _members,
+        listenable: Listenable.merge([_members, _places]),
         builder: (context, _) {
           final all = [if (_members.me != null) _members.me!, ..._members.others];
           final located = all.where((m) => m.position != null && m.sharing).toList();
@@ -174,14 +247,36 @@ class _HomeScreenState extends State<HomeScreen> {
                     _map.moveTo(me, zoom: 15);
                   }
                 },
+                circles: [
+                  for (final p in _places.all)
+                    MapCircle(
+                      id: 'place-${p.groupId}-${p.id}',
+                      center: p.position,
+                      radius: p.radius,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                ],
                 pins: [
+                  for (final p in _places.all)
+                    MapPin(
+                      id: 'place-${p.groupId}-${p.id}',
+                      position: p.position,
+                      label: p.name,
+                      emoji: p.emoji,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
                   for (final m in located)
                     MapPin(
                       id: m.uid,
                       position: m.position!,
                       label: m.uid == Backend.uid ? '나' : m.displayName,
                       emoji: m.badge,
-                      subLabel: m.isOnline ? null : '마지막 위치',
+                      // 다른 가족은 위치가 언제 것인지 함께 보여준다
+                      subLabel: m.uid == Backend.uid
+                          ? null
+                          : m.isOnline
+                              ? m.updatedLabel
+                              : '오프라인 · ${m.updatedLabel}',
                       color: m.uid == Backend.uid
                           ? Theme.of(context).colorScheme.tertiary
                           : m.isOnline
@@ -216,8 +311,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       for (final m in all)
                         ListTile(
                           leading: MemberAvatar(member: m),
-                          title: Text(m.uid == Backend.uid ? '${m.displayName} (나)' : m.displayName),
-                          subtitle: Text(m.statusText),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  m.uid == Backend.uid ? '${m.displayName} (나)' : m.displayName,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              OnlineBadge(member: m),
+                            ],
+                          ),
+                          subtitle: Text(_listSubtitle(m)),
                           trailing: BatteryLabel(member: m),
                           onTap: () => _openMember(m),
                         ),
@@ -265,10 +371,18 @@ class _EmptyGroupsBanner extends StatelessWidget {
 }
 
 class _MemberSheet extends StatefulWidget {
-  const _MemberSheet({required this.member, required this.isMe, required this.onHistory});
+  const _MemberSheet({
+    required this.member,
+    required this.isMe,
+    required this.onHistory,
+    required this.onTogether,
+    this.together,
+  });
   final Member member;
   final bool isMe;
   final VoidCallback onHistory;
+  final VoidCallback onTogether;
+  final TogetherRecord? together;
 
   @override
   State<_MemberSheet> createState() => _MemberSheetState();
@@ -304,16 +418,34 @@ class _MemberSheetState extends State<_MemberSheet> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: MemberAvatar(member: m, radius: 24),
-              title: Text(m.displayName, style: Theme.of(context).textTheme.titleLarge),
+              title: Row(
+                children: [
+                  Flexible(
+                    child: Text(m.displayName,
+                        style: Theme.of(context).textTheme.titleLarge, overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: 8),
+                  OnlineBadge(member: m),
+                ],
+              ),
               subtitle: Text(m.statusText),
               trailing: BatteryLabel(member: m),
             ),
-            if (m.accuracy != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text('정확도 약 ${m.accuracy!.round()}m',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ),
+            if (!widget.isMe)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: const Text('🤝', style: TextStyle(fontSize: 26)),
+                  title: Text(
+                      '오늘 함께한 시간 ${formatDuration(widget.together?.on(DateTime.now()) ?? Duration.zero)}'),
+                  subtitle: Text(
+                      '최근 7일 ${formatDuration(widget.together?.lastDays(7) ?? Duration.zero)} · 언제 어디서 함께했는지 보기'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onTogether,
+                ),
+              )
+            else
+              const SizedBox(height: 8),
             Row(
               children: [
                 if (!widget.isMe)
@@ -341,6 +473,34 @@ class _MemberSheetState extends State<_MemberSheet> {
   }
 }
 
+/// ● 온라인 / ○ 오프라인 표시
+class OnlineBadge extends StatelessWidget {
+  const OnlineBadge({super.key, required this.member});
+  final Member member;
+
+  @override
+  Widget build(BuildContext context) {
+    final online = member.isOnline && member.sharing;
+    final color = online ? const Color(0xFF2E9E5B) : Theme.of(context).colorScheme.outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(online ? Icons.circle : Icons.circle_outlined, size: 8, color: color),
+          const SizedBox(width: 4),
+          Text(member.onlineLabel,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({super.key, required this.member, this.radius = 20});
   final Member member;
@@ -351,15 +511,34 @@ class MemberAvatar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final online = member.isOnline && member.sharing;
     final emoji = member.avatar != null;
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: online ? scheme.primary : scheme.outline,
-      child: CircleAvatar(
-        radius: radius - 2.5,
-        backgroundColor: emoji ? scheme.surface : (online ? scheme.primary : scheme.outline),
-        foregroundColor: online ? scheme.onPrimary : scheme.surface,
-        child: Text(member.badge, style: TextStyle(fontSize: emoji ? radius * 1.1 : null)),
-      ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CircleAvatar(
+          radius: radius,
+          backgroundColor: online ? scheme.primary : scheme.outline,
+          child: CircleAvatar(
+            radius: radius - 2.5,
+            backgroundColor: emoji ? scheme.surface : (online ? scheme.primary : scheme.outline),
+            foregroundColor: online ? scheme.onPrimary : scheme.surface,
+            child: Text(member.badge, style: TextStyle(fontSize: emoji ? radius * 1.1 : null)),
+          ),
+        ),
+        // 오른쪽 아래 온라인 점
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: radius * 0.55,
+            height: radius * 0.55,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: online ? const Color(0xFF2E9E5B) : scheme.outline,
+              border: Border.all(color: scheme.surface, width: 2),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

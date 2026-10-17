@@ -37,8 +37,8 @@ jobs:
         run: npm ci
         working-directory: functions
 
-      - name: Type check
-        run: npx tsc --noEmit
+      - name: Type check and test
+        run: npm test
         working-directory: functions
 
       - name: Authenticate to Google Cloud

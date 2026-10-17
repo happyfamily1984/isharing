@@ -46,6 +46,8 @@ class Backend {
           return '비밀번호는 6자 이상이어야 합니다.';
         case 'account-exists-with-different-credential':
           return '이미 이메일/비밀번호로 가입된 계정입니다. 이메일로 로그인해주세요.';
+        case 'network-request-failed':
+          return '인터넷 연결이 불안정해요. 와이파이나 데이터 연결을 확인하고 다시 시도해주세요.';
         case 'user-mismatch':
           return '현재 로그인한 계정과 다른 구글 계정입니다.';
         case 'invalid-credential':

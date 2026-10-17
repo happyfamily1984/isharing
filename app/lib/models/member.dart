@@ -2,8 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
 
-/// 이 시간 이상 위치 갱신이 없으면 오프라인(전원 꺼짐/네트워크 끊김 등)으로 보고 마지막 위치를 표시한다.
-const offlineThreshold = Duration(minutes: 20);
+/// 이 시간 이상 위치 갱신이 없으면 오프라인(전원 꺼짐/네트워크 끊김 등)으로 본다.
+/// 앱은 멈춰 있어도 5분마다 위치를 올리므로, 두 번 연속 소식이 없으면 오프라인이다.
+const offlineThreshold = Duration(minutes: 11);
 
 class Member {
   Member({
@@ -55,23 +56,46 @@ class Member {
   bool get isOnline =>
       updatedAt != null && DateTime.now().difference(updatedAt!) < offlineThreshold;
 
-  String get statusText {
-    if (!sharing) return '위치 공유 일시중지';
-    if (position == null || updatedAt == null) return '위치 정보 없음';
-    final ago = _formatAgo(DateTime.now().difference(updatedAt!));
-    if (isOnline) return '실시간 · $ago';
-    final lowBattery = battery != null && battery! <= 5;
-    return lowBattery
-        ? '배터리 방전 추정 · 마지막 위치 $ago'
-        : '전원 꺼짐/연결 끊김 · 마지막 위치 $ago';
+  /// 온라인 / 오프라인 / 공유 중지
+  String get onlineLabel {
+    if (!sharing) return '공유 중지';
+    return isOnline ? '온라인' : '오프라인';
   }
 
-  static String _formatAgo(Duration d) {
-    if (d.inMinutes < 1) return '방금 전';
-    if (d.inHours < 1) return '${d.inMinutes}분 전';
-    if (d.inDays < 1) return '${d.inHours}시간 전';
-    return '${d.inDays}일 전';
+  /// 위치가 언제 것인지: 지금 / 3분 전 / 2시간 전 / 어제 18:20 / 10/14 09:30
+  String get updatedLabel {
+    final t = updatedAt;
+    if (t == null) return '위치 없음';
+    return formatAgo(t);
   }
+
+  /// 목록에 보여줄 한 줄 상태
+  String get statusText {
+    if (!sharing) return '위치 공유를 잠시 멈췄어요';
+    if (position == null || updatedAt == null) return '아직 위치 정보가 없어요';
+    final acc = accuracy == null ? '' : ' · 오차 ${accuracy!.round()}m';
+    if (isOnline) return '위치 $updatedLabel$acc';
+    final lowBattery = battery != null && battery! <= 5 && !charging;
+    final reason = lowBattery ? '배터리 방전 추정' : '전원 꺼짐 또는 연결 끊김';
+    return '$reason · 마지막 위치 $updatedLabel';
+  }
+}
+
+/// 지난 시각을 "지금 / N분 전 / N시간 전 / 어제 HH:mm / M/d HH:mm" 로 보여준다.
+String formatAgo(DateTime t, {DateTime? now}) {
+  now ??= DateTime.now();
+  final d = now.difference(t);
+  if (d.inSeconds < 90) return '지금';
+  if (d.inMinutes < 60) return '${d.inMinutes}분 전';
+  if (d.inHours < 6) return '${d.inHours}시간 전';
+  String hm(DateTime x) =>
+      '${x.hour.toString().padLeft(2, '0')}:${x.minute.toString().padLeft(2, '0')}';
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(t.year, t.month, t.day);
+  final days = today.difference(day).inDays;
+  if (days == 0) return '오늘 ${hm(t)}';
+  if (days == 1) return '어제 ${hm(t)}';
+  return '${t.month}/${t.day} ${hm(t)}';
 }
 
 class LocationPoint {
@@ -125,4 +149,37 @@ class Group {
 
   bool get inviteValid =>
       inviteCode != null && inviteExpiresAt != null && inviteExpiresAt!.isAfter(DateTime.now());
+}
+
+/// 그룹에 등록한 장소 (집, 회사, 학교 등). 도착하면 다른 가족에게 알림이 간다.
+class Place {
+  Place({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.emoji,
+    required this.position,
+    required this.radius,
+  });
+
+  final String id;
+  final String groupId;
+  final String name;
+  final String emoji;
+  final LatLng position;
+
+  /// 도착으로 볼 반경(m)
+  final double radius;
+
+  factory Place.fromDoc(String groupId, DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? const {};
+    return Place(
+      id: doc.id,
+      groupId: groupId,
+      name: (d['name'] as String?) ?? '',
+      emoji: (d['emoji'] as String?) ?? '📍',
+      position: LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()),
+      radius: ((d['radius'] as num?) ?? 150).toDouble(),
+    );
+  }
 }
