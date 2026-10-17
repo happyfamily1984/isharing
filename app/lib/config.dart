@@ -10,8 +10,11 @@ class AppConfig {
   /// Play 정책상 앱 밖에서도 계정 삭제를 요청할 수 있는 웹 페이지가 필요하다.
   static const accountDeletionUrl = 'https://example.com/delete-account';
 
-  /// OpenStreetMap 타일. 상용 트래픽이 많아지면 유료 타일 제공자로 교체해야 한다
-  /// (OSM 타일 사용 정책: https://operations.osmfoundation.org/policies/tiles/).
-  static const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  /// 지도 타일: OpenStreetMap 데이터에 CARTO 의 차분한 스타일을 입힌 것.
+  /// 무료 사용 한도(월 7만5천 지도 조회)를 넘으면 유료 플랜 또는 네이버/카카오 지도로 교체해야 한다.
+  /// https://carto.com/basemaps
+  static const tileUrlLight =
+      'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static const tileUrlDark = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   static const tileUserAgent = 'com.happyfamily.familylocator';
 }

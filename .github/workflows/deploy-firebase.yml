@@ -15,6 +15,7 @@ on:
       - "firestore.rules"
       - "firestore.indexes.json"
       - "firebase.json"
+      - ".github/workflows/deploy-firebase.yml"
 
 concurrency:
   group: deploy-firebase
@@ -51,3 +52,20 @@ jobs:
           --only firestore,functions
           --project "${{ secrets.FIREBASE_PROJECT_ID }}"
           --non-interactive --force
+
+      # firebase deploy 는 호출형(onCall) 함수의 공개 호출 권한을 "처음 만들 때만" 설정한다.
+      # 첫 배포가 중간에 실패하면 이 권한이 빠진 채 남아 앱에서 UNAUTHENTICATED 오류가 나므로
+      # 매 배포마다 확실히 설정한다 (이미 있으면 변화 없음). 호출자 인증·권한 검사는 각 함수 코드가 한다.
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Allow app to call callable functions
+        env:
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          for fn in createGroup regenerateInvite requestJoin respondJoin leaveGroup removeMember deleteMyData ringDevice; do
+            service=$(echo "$fn" | tr '[:upper:]' '[:lower:]')
+            gcloud run services add-iam-policy-binding "$service" \
+              --project "$PROJECT_ID" --region asia-northeast3 \
+              --member=allUsers --role=roles/run.invoker --quiet >/dev/null
+            echo "✔ $fn"
+          done
