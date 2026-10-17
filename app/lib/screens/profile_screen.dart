@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/avatars.dart';
-import '../services/backend.dart';
 
 /// 그룹 멤버에게 보일 이름과 이모지 캐릭터를 정하는 화면.
 /// 처음 가입했을 때는 저장할 때까지 닫을 수 없다([required]).
@@ -37,7 +36,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late final _name = TextEditingController(text: widget.initialName);
   late String _avatar = widget.initialAvatar ?? avatarChoices.first;
-  bool _busy = false;
 
   @override
   void dispose() {
@@ -45,19 +43,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  void _save() {
     final name = _name.text.trim();
     if (name.isEmpty) return;
-    setState(() => _busy = true);
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await AuthService.setProfile(name: name, avatar: _avatar);
-      navigator.pop();
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
-      if (mounted) setState(() => _busy = false);
-    }
+    AuthService.setProfile(name: name, avatar: _avatar);
+    Navigator.of(context).pop();
   }
 
   @override
@@ -144,7 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _name,
                   builder: (context, value, _) => FilledButton(
-                    onPressed: _busy || value.text.trim().isEmpty ? null : _save,
+                    onPressed: value.text.trim().isEmpty ? null : _save,
                     style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                     child: Text(widget.required ? '시작하기' : '저장'),
                   ),

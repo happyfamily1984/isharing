@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'backend.dart';
@@ -54,10 +57,19 @@ class AuthService {
       }, SetOptions(merge: true));
 
   /// 그룹 멤버에게 보일 이름과 이모지를 저장한다.
-  static Future<void> setProfile({required String name, required String avatar}) async {
-    await Backend.auth.currentUser!.updateDisplayName(name);
-    await Backend.userDoc(Backend.uid).set(
-        {'displayName': name, 'avatar': avatar, 'nameConfirmed': true}, SetOptions(merge: true));
+  ///
+  /// 신호가 약해도 멈추거나 실패하지 않게 서버 응답을 기다리지 않는다.
+  /// Firestore 는 기기에 먼저 저장해 화면에 바로 반영하고, 연결되면 알아서 서버에 올린다.
+  static void setProfile({required String name, required String avatar}) {
+    final user = Backend.auth.currentUser!;
+    unawaited(Backend.userDoc(user.uid).set(
+      {'displayName': name, 'avatar': avatar, 'nameConfirmed': true},
+      SetOptions(merge: true),
+    ).then((_) {}, onError: (Object e) => debugPrint('프로필 저장 실패: $e')));
+    // 로그인 계정의 표시 이름은 부가 정보(앱은 Firestore 이름을 씀)라 실패해도 무시한다.
+    unawaited(user
+        .updateDisplayName(name)
+        .then((_) {}, onError: (Object e) => debugPrint('계정 이름 변경 실패: $e')));
   }
 
   static Future<void> resetPassword(String email) =>
