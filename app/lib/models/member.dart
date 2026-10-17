@@ -126,3 +126,36 @@ class Group {
   bool get inviteValid =>
       inviteCode != null && inviteExpiresAt != null && inviteExpiresAt!.isAfter(DateTime.now());
 }
+
+/// 그룹에 등록한 장소 (집, 회사, 학교 등). 도착하면 다른 가족에게 알림이 간다.
+class Place {
+  Place({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.emoji,
+    required this.position,
+    required this.radius,
+  });
+
+  final String id;
+  final String groupId;
+  final String name;
+  final String emoji;
+  final LatLng position;
+
+  /// 도착으로 볼 반경(m)
+  final double radius;
+
+  factory Place.fromDoc(String groupId, DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? const {};
+    return Place(
+      id: doc.id,
+      groupId: groupId,
+      name: (d['name'] as String?) ?? '',
+      emoji: (d['emoji'] as String?) ?? '📍',
+      position: LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()),
+      radius: ((d['radius'] as num?) ?? 150).toDouble(),
+    );
+  }
+}

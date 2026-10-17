@@ -42,6 +42,24 @@ service cloud.firestore {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
       allow write: if false;
 
+      // 그룹 장소(집·회사 등): 그룹 멤버 누구나 등록·수정·삭제
+      match /places/{placeId} {
+        function isMember() {
+          return signedIn() &&
+            request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        }
+        function validPlace() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['name', 'emoji', 'lat', 'lng', 'radius', 'createdBy', 'createdAt'])
+            && d.name is string && d.name.size() > 0 && d.name.size() <= 20
+            && d.emoji is string && d.emoji.size() <= 8
+            && d.lat is number && d.lng is number
+            && d.radius is number && d.radius >= 50 && d.radius <= 1000;
+        }
+        allow read, delete: if isMember();
+        allow create, update: if isMember() && validPlace();
+      }
+
       match /requests/{requesterUid} {
         allow read: if isMe(requesterUid)
           || (signedIn() && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid);
@@ -50,6 +68,14 @@ service cloud.firestore {
     }
 
     match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+
+    // 위치 알림 상태 (서버 전용)
+    match /geoState/{uid} {
+      allow read, write: if false;
+    }
+    match /distState/{key} {
       allow read, write: if false;
     }
   }

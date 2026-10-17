@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,6 +28,13 @@ class SettingsScreen extends StatelessWidget {
       await Backend.userDoc(Backend.uid).set(
           {'sharing': false, 'lastLocation': FieldValue.delete()}, SetOptions(merge: true));
     }
+  }
+
+  /// 알림 설정 저장 (서버 응답을 기다리지 않음 — 화면에는 바로 반영)
+  void _setAlert(String key, Object value) {
+    unawaited(Backend.userDoc(Backend.uid)
+        .set({key: value}, SetOptions(merge: true))
+        .then((_) {}, onError: (Object e) => debugPrint('알림 설정 저장 실패: $e')));
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
@@ -84,6 +93,9 @@ class SettingsScreen extends StatelessWidget {
         builder: (context, snap) {
           final data = snap.data?.data() ?? const {};
           final sharing = (data['sharing'] as bool?) ?? true;
+          final alertPlaces = (data['alertPlaces'] as bool?) ?? true;
+          final alertDistance = (data['alertDistance'] as bool?) ?? true;
+          final distanceKm = (data['alertDistanceKm'] as num?)?.toInt() ?? 5;
           final name = (data['displayName'] as String?) ?? '';
           return ListView(
             children: [
@@ -113,6 +125,39 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('계정'),
                 subtitle: Text(Backend.auth.currentUser?.email ?? ''),
               ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text('알림', style: Theme.of(context).textTheme.titleSmall),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.place),
+                title: const Text('장소 도착 알림'),
+                subtitle: const Text('가족이 등록된 장소에 도착하면 알려줘요'),
+                value: alertPlaces,
+                onChanged: (v) => _setAlert('alertPlaces', v),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.social_distance),
+                title: const Text('거리 알림'),
+                subtitle: Text('가족과 ${distanceKm}km 이상 멀어지거나 다시 가까워지면 알려줘요'),
+                value: alertDistance,
+                onChanged: (v) => _setAlert('alertDistance', v),
+              ),
+              if (alertDistance)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 1, label: Text('1km')),
+                      ButtonSegment(value: 3, label: Text('3km')),
+                      ButtonSegment(value: 5, label: Text('5km')),
+                      ButtonSegment(value: 10, label: Text('10km')),
+                    ],
+                    selected: {distanceKm},
+                    onSelectionChanged: (v) => _setAlert('alertDistanceKm', v.first),
+                  ),
+                ),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.privacy_tip),

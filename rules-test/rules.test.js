@@ -24,6 +24,7 @@ beforeEach(async () => {
     await setDoc(doc(db, "users/alice/locations/p1"), { lat: 1, lng: 2, ts: Timestamp.now() });
     await setDoc(doc(db, "groups/g1"), { name: "Fam", ownerId: "alice", members: ["alice", "bob"] });
     await setDoc(doc(db, "groups/g1/requests/mallory"), { displayName: "M" });
+    await setDoc(doc(db, "groups/g1/places/home"), { name: "집", emoji: "🏠", lat: 1, lng: 2, radius: 150 });
   });
 });
 
@@ -71,4 +72,24 @@ test("join requests are visible to the group owner and the requester only", asyn
 
 test("invite codes are server-only", async () => {
   await assertFails(getDoc(doc(as("alice"), "inviteCodes/ABC123")));
+});
+
+const place = { name: "회사", emoji: "🏢", lat: 37.5, lng: 127.0, radius: 150, createdBy: "bob" };
+
+test("group members can manage places; outsiders cannot see them", async () => {
+  await assertSucceeds(getDoc(doc(as("bob"), "groups/g1/places/home")));
+  await assertSucceeds(setDoc(doc(as("bob"), "groups/g1/places/work"), place));
+  await assertFails(getDoc(doc(as("mallory"), "groups/g1/places/home")));
+  await assertFails(setDoc(doc(as("mallory"), "groups/g1/places/evil"), place));
+});
+
+test("place fields are validated", async () => {
+  await assertFails(setDoc(doc(as("bob"), "groups/g1/places/x"), { ...place, radius: 5000 }));
+  await assertFails(setDoc(doc(as("bob"), "groups/g1/places/x"), { ...place, name: "" }));
+  await assertFails(setDoc(doc(as("bob"), "groups/g1/places/x"), { ...place, extra: true }));
+});
+
+test("alert state is server-only", async () => {
+  await assertFails(getDoc(doc(as("alice"), "geoState/alice")));
+  await assertFails(getDoc(doc(as("alice"), "distState/alice_bob")));
 });

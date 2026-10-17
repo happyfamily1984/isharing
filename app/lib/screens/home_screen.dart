@@ -10,6 +10,7 @@ import '../services/backend.dart';
 import '../services/group_service.dart';
 import '../services/location_service.dart';
 import '../services/messaging_service.dart';
+import '../services/place_service.dart';
 import '../services/plan.dart';
 import 'disclosure_screen.dart';
 import 'profile_screen.dart';
@@ -27,16 +28,29 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _map = FamilyMapController();
   final _members = MembersController();
+  final _places = PlacesController();
   List<Group> _groups = const [];
   StreamSubscription<List<Group>>? _groupsSub;
   StreamSubscription<String>? _ringSub;
+  StreamSubscription<String>? _alertSub;
   bool _centeredOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _groupsSub = GroupService.myGroups().listen((g) => setState(() => _groups = g));
+    _groupsSub = GroupService.myGroups().listen((g) {
+      setState(() => _groups = g);
+      _places.setGroups(g.map((group) => group.id));
+    });
     _ringSub = MessagingService.incomingRings.listen(_onRing);
+    _alertSub = MessagingService.incomingAlerts.listen((text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ));
+    });
     _members.addListener(_onMembersChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _startup());
   }
@@ -45,7 +59,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _groupsSub?.cancel();
     _ringSub?.cancel();
+    _alertSub?.cancel();
     _members.dispose();
+    _places.dispose();
     super.dispose();
   }
 
@@ -159,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: ListenableBuilder(
-        listenable: _members,
+        listenable: Listenable.merge([_members, _places]),
         builder: (context, _) {
           final all = [if (_members.me != null) _members.me!, ..._members.others];
           final located = all.where((m) => m.position != null && m.sharing).toList();
@@ -174,7 +190,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     _map.moveTo(me, zoom: 15);
                   }
                 },
+                circles: [
+                  for (final p in _places.all)
+                    MapCircle(
+                      id: 'place-${p.groupId}-${p.id}',
+                      center: p.position,
+                      radius: p.radius,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                ],
                 pins: [
+                  for (final p in _places.all)
+                    MapPin(
+                      id: 'place-${p.groupId}-${p.id}',
+                      position: p.position,
+                      label: p.name,
+                      emoji: p.emoji,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
                   for (final m in located)
                     MapPin(
                       id: m.uid,

@@ -6,6 +6,7 @@ import '../models/member.dart';
 import '../services/backend.dart';
 import '../services/group_service.dart';
 import '../services/plan.dart';
+import 'places_screen.dart';
 
 /// 그룹 만들기 / 초대코드로 가입 요청 / 가입 승인 / 멤버 관리.
 class GroupsScreen extends StatelessWidget {
@@ -199,6 +200,17 @@ class _GroupCard extends StatelessWidget {
               ),
               const Divider(height: 24),
             ],
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.place),
+              title: const Text('장소 (집 · 회사 · 학교)'),
+              subtitle: const Text('가족이 도착하면 서로에게 알림이 와요'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => PlacesScreen(group: group, myPosition: members.me?.position),
+              )),
+            ),
+            const Divider(height: 24),
             Text('멤버', style: theme.textTheme.titleSmall),
             ListenableBuilder(
               listenable: members,

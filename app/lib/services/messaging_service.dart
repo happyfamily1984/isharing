@@ -20,11 +20,16 @@ class MessagingService {
 
   static const _ringChannel = MethodChannel('familylocator/ring');
   static final _incomingRings = StreamController<String>.broadcast();
+  static final _incomingAlerts = StreamController<String>.broadcast();
   static StreamSubscription<String>? _tokenSub;
   static StreamSubscription<RemoteMessage>? _messageSub;
 
   /// 앱이 열려 있을 때 벨 요청이 오면 보낸 사람 이름을 내보낸다.
   static Stream<String> get incomingRings => _incomingRings.stream;
+
+  /// 앱이 열려 있을 때 받은 장소 도착·거리 알림 문구.
+  /// (앱이 열려 있으면 시스템 알림이 뜨지 않아 화면 안에서 보여준다)
+  static Stream<String> get incomingAlerts => _incomingAlerts.stream;
 
   static Future<void> init() async {
     final messaging = FirebaseMessaging.instance;
@@ -37,8 +42,11 @@ class MessagingService {
 
     await _messageSub?.cancel();
     _messageSub = FirebaseMessaging.onMessage.listen((message) {
-      if (message.data['type'] == 'ring') {
+      final type = message.data['type'];
+      if (type == 'ring') {
         _incomingRings.add((message.data['fromName'] as String?) ?? '');
+      } else if (message.notification?.body != null) {
+        _incomingAlerts.add(message.notification!.body!);
       }
     });
   }

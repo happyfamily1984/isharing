@@ -37,6 +37,16 @@ class MapLine {
   final double width;
 }
 
+/// 지도에 그릴 원 (등록한 장소의 도착 반경).
+class MapCircle {
+  const MapCircle({required this.id, required this.center, required this.radius, required this.color});
+
+  final String id;
+  final LatLng center;
+  final double radius;
+  final Color color;
+}
+
 /// 화면에서 지도 카메라를 움직일 때 쓰는 컨트롤러.
 class FamilyMapController {
   NaverMapController? _map;
@@ -54,6 +64,14 @@ class FamilyMapController {
 
   Future<void> moveTo(LatLng target, {double zoom = 15}) =>
       _update(NCameraUpdate.scrollAndZoomTo(target: _n(target), zoom: zoom));
+
+  /// 지금 지도 화면 가운데 좌표
+  Future<LatLng?> center() async {
+    final map = _map;
+    if (map == null) return null;
+    final target = (await map.getCameraPosition()).target;
+    return LatLng(target.latitude, target.longitude);
+  }
 
   /// 모든 점이 화면에 들어오게 맞춘다.
   Future<void> fit(List<LatLng> points) async {
@@ -75,6 +93,8 @@ class FamilyMap extends StatefulWidget {
     required this.controller,
     this.pins = const [],
     this.lines = const [],
+    this.circles = const [],
+    this.onCameraIdle,
     this.initialCenter = const LatLng(37.5665, 126.9780), // 서울시청
     this.initialZoom = 11,
     this.onReady,
@@ -83,6 +103,10 @@ class FamilyMap extends StatefulWidget {
   final FamilyMapController controller;
   final List<MapPin> pins;
   final List<MapLine> lines;
+  final List<MapCircle> circles;
+
+  /// 사용자가 지도를 움직이다 멈췄을 때
+  final VoidCallback? onCameraIdle;
   final LatLng initialCenter;
   final double initialZoom;
   final VoidCallback? onReady;
@@ -134,6 +158,16 @@ class _FamilyMapState extends State<FamilyMap> {
     final map = _map;
     if (map == null || !mounted) return;
     final overlays = <NAddableOverlay>[];
+    for (final c in widget.circles) {
+      overlays.add(NCircleOverlay(
+        id: c.id,
+        center: _n(c.center),
+        radius: c.radius,
+        color: c.color.withValues(alpha: 0.15),
+        outlineColor: c.color.withValues(alpha: 0.6),
+        outlineWidth: 1.5,
+      ));
+    }
     for (final line in widget.lines) {
       final coords = _dedupe(line.points);
       if (coords.length < 2) continue;
@@ -221,6 +255,7 @@ class _FamilyMapState extends State<FamilyMap> {
         indoorEnable: false,
         consumeSymbolTapEvents: false,
       ),
+      onCameraIdle: widget.onCameraIdle,
       onMapReady: (controller) {
         _map = controller;
         widget.controller._map = controller;
