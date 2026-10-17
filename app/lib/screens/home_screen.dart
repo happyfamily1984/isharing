@@ -14,11 +14,13 @@ import '../services/location_service.dart';
 import '../services/messaging_service.dart';
 import '../services/place_service.dart';
 import '../services/plan.dart';
+import '../services/together_service.dart';
 import 'disclosure_screen.dart';
 import 'profile_screen.dart';
 import 'groups_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+import 'together_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _ringSub;
   StreamSubscription<String>? _alertSub;
   Timer? _clock;
+  StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
+  Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
 
   @override
@@ -55,6 +59,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ));
     });
     _members.addListener(_onMembersChanged);
+    _togetherSub = TogetherService.mine().listen(
+      (t) => setState(() => _together = t),
+      onError: (Object e) => debugPrint('함께한 시간 불러오기 실패: $e'),
+    );
     // "3분 전", 온라인/오프라인 표시가 저절로 바뀌도록 30초마다 다시 그린다
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -68,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _ringSub?.cancel();
     _alertSub?.cancel();
     _clock?.cancel();
+    _togetherSub?.cancel();
     _members.dispose();
     _places.dispose();
     super.dispose();
@@ -123,6 +132,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (go == true) await Geolocator.openAppSettings();
   }
 
+  String _listSubtitle(Member m) {
+    final today = _together[m.uid]?.on(DateTime.now()) ?? Duration.zero;
+    if (m.uid == Backend.uid || today.inMinutes < 1) return m.statusText;
+    return '${m.statusText}\n🤝 오늘 함께 ${formatDuration(today)}';
+  }
+
   void _onMembersChanged() {
     if (!_centeredOnce && _members.me?.position != null) {
       _centeredOnce = true;
@@ -176,9 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => _MemberSheet(
         member: m,
         isMe: m.uid == Backend.uid,
+        together: _together[m.uid],
         onHistory: () {
           Navigator.pop(ctx);
           _openHistory(m.uid);
+        },
+        onTogether: () {
+          Navigator.pop(ctx);
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => TogetherScreen(member: m, places: _places),
+          ));
         },
       ),
     );
@@ -301,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               OnlineBadge(member: m),
                             ],
                           ),
-                          subtitle: Text(m.statusText),
+                          subtitle: Text(_listSubtitle(m)),
                           trailing: BatteryLabel(member: m),
                           onTap: () => _openMember(m),
                         ),
@@ -349,10 +371,18 @@ class _EmptyGroupsBanner extends StatelessWidget {
 }
 
 class _MemberSheet extends StatefulWidget {
-  const _MemberSheet({required this.member, required this.isMe, required this.onHistory});
+  const _MemberSheet({
+    required this.member,
+    required this.isMe,
+    required this.onHistory,
+    required this.onTogether,
+    this.together,
+  });
   final Member member;
   final bool isMe;
   final VoidCallback onHistory;
+  final VoidCallback onTogether;
+  final TogetherRecord? together;
 
   @override
   State<_MemberSheet> createState() => _MemberSheetState();
@@ -401,7 +431,21 @@ class _MemberSheetState extends State<_MemberSheet> {
               subtitle: Text(m.statusText),
               trailing: BatteryLabel(member: m),
             ),
-            const SizedBox(height: 8),
+            if (!widget.isMe)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: const Text('🤝', style: TextStyle(fontSize: 26)),
+                  title: Text(
+                      '오늘 함께한 시간 ${formatDuration(widget.together?.on(DateTime.now()) ?? Duration.zero)}'),
+                  subtitle: Text(
+                      '최근 7일 ${formatDuration(widget.together?.lastDays(7) ?? Duration.zero)} · 언제 어디서 함께했는지 보기'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onTogether,
+                ),
+              )
+            else
+              const SizedBox(height: 8),
             Row(
               children: [
                 if (!widget.isMe)

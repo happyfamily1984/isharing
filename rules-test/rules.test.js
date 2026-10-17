@@ -24,6 +24,7 @@ beforeEach(async () => {
     await setDoc(doc(db, "users/alice/locations/p1"), { lat: 1, lng: 2, ts: Timestamp.now() });
     await setDoc(doc(db, "groups/g1"), { name: "Fam", ownerId: "alice", members: ["alice", "bob"] });
     await setDoc(doc(db, "groups/g1/requests/mallory"), { displayName: "M" });
+    await setDoc(doc(db, "together/alice_bob"), { members: ["alice", "bob"], days: {}, sessions: [] });
     await setDoc(doc(db, "groups/g1/places/home"), { name: "집", emoji: "🏠", lat: 1, lng: 2, radius: 150 });
   });
 });
@@ -92,4 +93,11 @@ test("place fields are validated", async () => {
 test("alert state is server-only", async () => {
   await assertFails(getDoc(doc(as("alice"), "geoState/alice")));
   await assertFails(getDoc(doc(as("alice"), "distState/alice_bob")));
+});
+
+test("time together is visible only to the two people and never client-written", async () => {
+  await assertSucceeds(getDoc(doc(as("alice"), "together/alice_bob")));
+  await assertSucceeds(getDoc(doc(as("bob"), "together/alice_bob")));
+  await assertFails(getDoc(doc(as("mallory"), "together/alice_bob")));
+  await assertFails(setDoc(doc(as("alice"), "together/alice_bob"), { members: ["alice", "bob"], days: { x: 99999 } }));
 });

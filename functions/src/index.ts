@@ -12,6 +12,8 @@ import {
   normalizeDistanceKm,
   pairState,
   placeState,
+  TogetherState,
+  updateTogether,
   watchKey,
 } from "./geo";
 
@@ -228,6 +230,7 @@ export const deleteMyData = onCall(async (req) => {
   const watches = await Promise.all([
     db.collection("distState").where("viewer", "==", uid).get(),
     db.collection("distState").where("target", "==", uid).get(),
+    db.collection("together").where("members", "array-contains", uid).get(),
   ]);
   const batch = db.batch();
   watches.flatMap((q) => q.docs).forEach((d) => batch.delete(d.ref));
@@ -429,11 +432,27 @@ async function checkDistances(uid: string, me: UserData, loc: LatLng) {
 
       const d = distanceMeters(loc, otherLoc);
       await Promise.all([
+        recordTogether(uid, otherUid, d, {
+          lat: (loc.lat + otherLoc.lat) / 2,
+          lng: (loc.lng + otherLoc.lng) / 2,
+        }),
         updateWatch(otherUid, other, uid, me, d), // 가족이 나를 보는 방향
         updateWatch(uid, me, otherUid, other, d), // 내가 가족을 보는 방향
       ]);
     }),
   );
+}
+
+/** 두 가족이 함께 있었던 시간과 장소를 누적한다 (together/{두 사람 키}). */
+async function recordTogether(a: string, b: string, distance: number, meetingPoint: LatLng) {
+  const [x, y] = a < b ? [a, b] : [b, a];
+  const ref = db.collection("together").doc(`${x}_${y}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const prev = snap.exists ? (snap.data() as TogetherState) : undefined;
+    const next = updateTogether(prev, distance, Date.now(), meetingPoint);
+    tx.set(ref, { members: [x, y], ...next });
+  });
 }
 
 async function updateWatch(

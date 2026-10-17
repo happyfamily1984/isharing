@@ -67,3 +67,87 @@ export function pairState(
 export function watchKey(viewer: string, target: string): string {
   return `${viewer}_${target}`;
 }
+
+// ---------------------------------------------------------------------------
+// 함께한 시간
+// ---------------------------------------------------------------------------
+
+/** 이 거리 안이면 함께 있는 것으로 본다 */
+export const TOGETHER_ENTER_M = 100;
+/** 함께 있다가 이보다 멀어져야 떨어진 것으로 본다 (GPS 흔들림 대비) */
+export const TOGETHER_EXIT_M = 200;
+/** 기록이 이보다 오래 끊긴 구간은 세지 않는다 (둘 다 폰이 꺼져 있었을 수 있음) */
+export const TOGETHER_MAX_GAP_MS = 10 * 60 * 1000;
+/** 날짜별 기록 보관 기간 */
+export const TOGETHER_KEEP_DAYS = 35;
+
+/** 함께 있었던 한 번의 시간과 장소 */
+export interface TogetherSession {
+  /** 시작·끝 시각 (ms) */
+  start: number;
+  end: number;
+  /** 함께 있던 곳 (만났을 때 두 사람의 가운데 지점) */
+  lat: number;
+  lng: number;
+}
+
+export interface TogetherState {
+  together: boolean;
+  /** 마지막으로 판단한 시각 (ms) */
+  lastAt: number;
+  /** 한국 날짜("2026-10-17")별 함께한 초 */
+  days: Record<string, number>;
+  /** 함께 있었던 시간·장소 목록 (오래된 것부터) */
+  sessions: TogetherSession[];
+}
+
+/** 한국 시간 기준 날짜 문자열 */
+export function kstDay(ms: number): string {
+  return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * 두 사람의 거리를 새로 잰 시점에 함께한 시간과 장소 기록을 갱신한다.
+ * 직전에 함께 있었다면 그 사이 시간은 함께 보낸 것으로 본다.
+ * [meetingPoint] 는 두 사람의 가운데 지점이다.
+ */
+export function updateTogether(
+  prev: TogetherState | undefined,
+  distance: number,
+  nowMs: number,
+  meetingPoint: LatLng,
+): TogetherState {
+  const together = prev?.together ? distance <= TOGETHER_EXIT_M : distance <= TOGETHER_ENTER_M;
+  const days: Record<string, number> = { ...(prev?.days ?? {}) };
+  const sessions: TogetherSession[] = (prev?.sessions ?? []).map((x) => ({ ...x }));
+  const gap = prev ? nowMs - prev.lastAt : Infinity;
+  const continuous = gap > 0 && gap <= TOGETHER_MAX_GAP_MS;
+
+  // 직전에 함께였고 기록이 이어져 있으면 그 사이 시간을 더하고 마지막 기록을 늘린다.
+  if (prev?.together && continuous) {
+    const day = kstDay(nowMs);
+    days[day] = (days[day] ?? 0) + Math.round(gap / 1000);
+    const last = sessions[sessions.length - 1];
+    if (last) last.end = nowMs;
+  }
+
+  // 새로 함께하기 시작: 직전 기록에 바로 이어지면(10분 이내·가까운 곳) 합치고, 아니면 새 기록
+  if (together && !(prev?.together && continuous)) {
+    const last = sessions[sessions.length - 1];
+    const resumes =
+      last !== undefined &&
+      nowMs - last.end <= TOGETHER_MAX_GAP_MS &&
+      distanceMeters(last, meetingPoint) <= TOGETHER_EXIT_M;
+    if (!resumes) sessions.push({ start: nowMs, end: nowMs, lat: meetingPoint.lat, lng: meetingPoint.lng });
+  }
+
+  const cutoff = nowMs - TOGETHER_KEEP_DAYS * 24 * 60 * 60 * 1000;
+  const oldest = kstDay(cutoff);
+  for (const day of Object.keys(days)) if (day < oldest) delete days[day];
+  return {
+    together,
+    lastAt: nowMs,
+    days,
+    sessions: sessions.filter((x) => x.end >= cutoff),
+  };
+}
