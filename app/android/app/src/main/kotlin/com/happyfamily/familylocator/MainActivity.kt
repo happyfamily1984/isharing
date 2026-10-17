@@ -29,7 +29,8 @@ class MainActivity : FlutterActivity() {
                     "isBatteryOptimized" -> {
                         val optimized = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             val pm = getSystemService(POWER_SERVICE) as PowerManager
-                            !pm.isIgnoringBatteryOptimizations(packageName)
+                            val ignoring = pm.isIgnoringBatteryOptimizations(packageName)
+                            ignoring.not()
                         } else {
                             false
                         }
