@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'backend.dart';
@@ -111,6 +112,19 @@ class LocationService {
           timeLimit: Duration(seconds: 20),
         ),
       );
+
+  static const _power = MethodChannel('familylocator/power');
+
+  /// 이 앱이 배터리 최적화(절전) 대상인지 (Android). 그렇다면 화면이 꺼진 뒤
+  /// 폰이 앱을 멈춰 위치 공유가 끊길 수 있다.
+  static Future<bool> isBatteryOptimized() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _power.invokeMethod<bool>('isBatteryOptimized') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Android 12+/iOS 14+ 에서 사용자가 "대략적인 위치"만 허용했는지.
   /// 이 경우 오차가 1~3km 까지 커진다.

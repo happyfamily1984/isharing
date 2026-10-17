@@ -39,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<String>? _ringSub;
   StreamSubscription<String>? _alertSub;
   Timer? _clock;
+  bool _batteryOptimized = false;
+  bool _batteryBannerClosed = false;
   StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
   Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
@@ -120,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if ((data?['sharing'] as bool?) ?? true) {
       final started = await ensureSharing(context);
       if (started && mounted) await _checkPreciseLocation();
+      if (started) await _checkBattery();
     }
   }
 
@@ -129,6 +132,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) return;
     final sharing = _members.me?.sharing ?? true;
     if (sharing && !LocationService.instance.running.value) LocationService.instance.start();
+    _checkBattery();
+  }
+
+  Future<void> _checkBattery() async {
+    final optimized = await LocationService.isBatteryOptimized();
+    if (mounted && optimized != _batteryOptimized) setState(() => _batteryOptimized = optimized);
   }
 
   /// "대략적인 위치"만 허용돼 있으면 오차가 수 km 라서 정확한 위치를 켜도록 안내한다.
@@ -316,6 +325,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Column(
                   children: [
                     if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
+                    if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
+                      _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
                     if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),
                   ],
                 ),
@@ -431,6 +442,49 @@ class _SharingProblemBanner extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 배터리 최적화 대상이면 화면이 꺼진 뒤 위치 공유가 끊길 수 있어 안내한다.
+class _BatteryBanner extends StatelessWidget {
+  const _BatteryBanner({required this.onClose});
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Card(
+        color: scheme.tertiaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+          child: Row(
+            children: [
+              Icon(Icons.battery_alert, color: scheme.onTertiaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '절전 설정 때문에 화면이 꺼지면 위치 공유가 멈출 수 있어요.\n'
+                  '앱 설정 > 배터리에서 "제한 없음"을 선택해주세요.',
+                  style: TextStyle(color: scheme.onTertiaryContainer),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => Geolocator.openAppSettings(),
+                    child: const Text('설정 열기'),
+                  ),
+                  TextButton(onPressed: onClose, child: const Text('닫기')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
