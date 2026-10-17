@@ -2,9 +2,12 @@
 # Actions 탭 > "Build Android APK" > Run workflow 로 실행하면
 # Releases 의 "test-latest" 에 app-release.apk 가 올라간다 (폰에서 바로 다운로드 가능).
 #
+# 빌드가 끝나면 Firebase App Distribution 의 "family" 그룹 테스터에게 새 버전 알림을 보낸다.
+#
 # 필요한 GitHub Secret:
 #   GOOGLE_SERVICES_JSON : Firebase 에서 받은 google-services.json 파일 내용 전체
 #   NAVER_MAP_CLIENT_ID  : 네이버 클라우드 플랫폼 Maps 의 Client ID (없으면 지도 대신 안내 문구가 나옴)
+#   FIREBASE_SERVICE_ACCOUNT : 배포용 서비스 계정 키 (Firebase App Distribution 관리자 역할 필요)
 name: Build Android APK
 
 on:
@@ -75,3 +78,27 @@ jobs:
             --title "테스트 빌드 #${{ github.run_number }}" \
             --notes "커밋 ${{ github.sha }} 로 만든 테스트용 APK 입니다. 폰에서 family-locator.apk 를 눌러 설치하세요." \
             --target "${{ github.sha }}"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      # 가족(테스터)에게 링크로 배포: App Tester 앱에 새 버전 알림이 간다
+      - name: Send to family testers
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          APP_ID=$(python3 -c '
+          import json, os
+          data = json.loads(os.environ["GOOGLE_SERVICES_JSON"])
+          for c in data["client"]:
+              if c["client_info"]["android_client_info"]["package_name"] == "com.happyfamily.familylocator":
+                  print(c["client_info"]["mobilesdk_app_id"])
+          ')
+          NOTES=$(git log -1 --pretty=%b | head -c 900)
+          [ -z "$NOTES" ] && NOTES=$(git log -1 --pretty=%s | head -c 900)
+          npx --yes firebase-tools@14 appdistribution:distribute family-locator.apk \
+            --app "$APP_ID" \
+            --groups family \
+            --release-notes "테스트 빌드 #${{ github.run_number }}: $NOTES"

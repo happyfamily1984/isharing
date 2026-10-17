@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -29,7 +30,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _map = FamilyMapController();
   final _members = MembersController();
   final _places = PlacesController();
@@ -38,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _ringSub;
   StreamSubscription<String>? _alertSub;
   Timer? _clock;
+  bool _batteryOptimized = false;
+  bool _batteryBannerClosed = false;
   StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
   Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
@@ -59,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ));
     });
     _members.addListener(_onMembersChanged);
+    WidgetsBinding.instance.addObserver(this);
     _togetherSub = TogetherService.mine().listen(
       (t) => setState(() => _together = t),
       onError: (Object e) => debugPrint('함께한 시간 불러오기 실패: $e'),
@@ -76,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _ringSub?.cancel();
     _alertSub?.cancel();
     _clock?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _togetherSub?.cancel();
     _members.dispose();
     _places.dispose();
@@ -83,17 +88,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _startup() async {
+    // 알림 등록은 서버 응답이 늦거나 알림 허용 창에 답하지 않아도 위치 공유를 막지 않도록 따로 진행한다.
+    unawaited(MessagingService.init()
+        .timeout(const Duration(seconds: 30))
+        .then((_) {}, onError: (Object e) => debugPrint('messaging init failed: $e')));
+
+    // 내 정보: 인터넷이 불안정하면 기기에 저장된 값으로 진행한다.
+    Map<String, dynamic>? data;
+    final doc = Backend.userDoc(Backend.uid);
     try {
-      await MessagingService.init();
+      data = (await doc.get().timeout(const Duration(seconds: 8))).data();
     } catch (e) {
-      debugPrint('messaging init failed: $e');
+      debugPrint('profile load failed, using cache: $e');
+      try {
+        data = (await doc.get(const GetOptions(source: Source.cache))).data();
+      } catch (_) {}
     }
-    final me = await Backend.userDoc(Backend.uid).get();
     if (!mounted) return;
-    final data = me.data() ?? const <String, dynamic>{};
-    // 처음 한 번 이름과 지도에 보일 캐릭터를 정한다.
-    if (data['avatar'] == null ||
-        (data['nameConfirmed'] != true && !AuthService.usesPassword)) {
+
+    // 처음 한 번 이름과 지도에 보일 캐릭터를 정한다 (내 정보를 확인했을 때만).
+    if (data != null &&
+        (data['avatar'] == null || (data['nameConfirmed'] != true && !AuthService.usesPassword))) {
       await ProfileScreen.show(
         context,
         name: (data['displayName'] as String?) ?? '',
@@ -102,10 +117,27 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted) return;
     }
-    if ((data['sharing'] as bool?) ?? true) {
+
+    // 사용자가 직접 끈 경우가 아니면 위치 공유를 시작한다.
+    if ((data?['sharing'] as bool?) ?? true) {
       final started = await ensureSharing(context);
       if (started && mounted) await _checkPreciseLocation();
+      if (started) await _checkBattery();
     }
+  }
+
+  /// 설정에서 GPS·권한을 켜고 돌아오면 바로 공유를 다시 시작한다.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final sharing = _members.me?.sharing ?? true;
+    if (sharing && !LocationService.instance.running.value) LocationService.instance.start();
+    _checkBattery();
+  }
+
+  Future<void> _checkBattery() async {
+    final optimized = await LocationService.isBatteryOptimized();
+    if (mounted && optimized != _batteryOptimized) setState(() => _batteryOptimized = optimized);
   }
 
   /// "대략적인 위치"만 허용돼 있으면 오차가 수 km 라서 정확한 위치를 켜도록 안내한다.
@@ -286,7 +318,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                 ],
               ),
-              if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: Column(
+                  children: [
+                    if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
+                    if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
+                      _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
+                    if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),
+                  ],
+                ),
+              ),
               DraggableScrollableSheet(
                 initialChildSize: 0.25,
                 minChildSize: 0.12,
@@ -342,9 +386,107 @@ class _HomeScreenState extends State<HomeScreen> {
 /// 위치 공유를 시작한다. 권한이 없으면 명시적 고지 화면부터 보여준다.
 Future<bool> ensureSharing(BuildContext context) async {
   if (await LocationService.instance.start()) return true;
+  // GPS 가 꺼진 경우는 권한 문제가 아니므로 홈 화면 경고에서 켜도록 안내한다.
+  if (LocationService.instance.problem.value == SharingProblem.serviceOff) return false;
   if (!context.mounted) return false;
   final granted = await DisclosureScreen.show(context);
   return granted && await LocationService.instance.start();
+}
+
+/// 내 위치가 공유되지 않고 있을 때 원인과 해결 버튼을 보여준다.
+class _SharingProblemBanner extends StatelessWidget {
+  const _SharingProblemBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<SharingProblem>(
+      valueListenable: LocationService.instance.problem,
+      builder: (context, problem, _) {
+        if (problem == SharingProblem.none) return const SizedBox.shrink();
+        final (text, action, onPressed) = switch (problem) {
+          SharingProblem.serviceOff => (
+              '폰의 위치(GPS) 기능이 꺼져 있어서 가족에게 내 위치가 보이지 않아요.',
+              '위치 켜기',
+              () => Geolocator.openLocationSettings(),
+            ),
+          SharingProblem.permissionDenied => (
+              '위치 권한이 없어서 가족에게 내 위치가 보이지 않아요.',
+              '권한 허용',
+              () => ensureSharing(context),
+            ),
+          SharingProblem.permissionDeniedForever => (
+              '위치 권한이 꺼져 있어요. 설정 > 권한 > 위치에서 "항상 허용"을 선택해주세요.',
+              '설정 열기',
+              () => Geolocator.openAppSettings(),
+            ),
+          SharingProblem.none => ('', '', () async => false),
+        };
+        final scheme = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Card(
+            color: scheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.location_disabled, color: scheme.onErrorContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(text, style: TextStyle(color: scheme.onErrorContainer)),
+                  ),
+                  TextButton(onPressed: onPressed, child: Text(action)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 배터리 최적화 대상이면 화면이 꺼진 뒤 위치 공유가 끊길 수 있어 안내한다.
+class _BatteryBanner extends StatelessWidget {
+  const _BatteryBanner({required this.onClose});
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Card(
+        color: scheme.tertiaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+          child: Row(
+            children: [
+              Icon(Icons.battery_alert, color: scheme.onTertiaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '절전 설정 때문에 화면이 꺼지면 위치 공유가 멈출 수 있어요.\n'
+                  '앱 설정 > 배터리에서 "제한 없음"을 선택해주세요.',
+                  style: TextStyle(color: scheme.onTertiaryContainer),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => Geolocator.openAppSettings(),
+                    child: const Text('설정 열기'),
+                  ),
+                  TextButton(onPressed: onClose, child: const Text('닫기')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EmptyGroupsBanner extends StatelessWidget {
@@ -353,10 +495,8 @@ class _EmptyGroupsBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      top: 16,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Card(
         child: ListTile(
           leading: const Icon(Icons.group_add),

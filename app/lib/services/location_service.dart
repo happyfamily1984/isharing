@@ -4,9 +4,13 @@ import 'dart:io';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'backend.dart';
+
+/// 위치 공유가 시작되지 못한 이유 (홈 화면 경고에 표시)
+enum SharingProblem { none, serviceOff, permissionDenied, permissionDeniedForever }
 
 /// 내 위치를 수집해 서버에 올린다.
 ///
@@ -40,16 +44,28 @@ class LocationService {
 
   final running = ValueNotifier<bool>(false);
 
+  /// 공유를 켰는데 시작하지 못한 이유
+  final problem = ValueNotifier<SharingProblem>(SharingProblem.none);
+
   /// 권한 상태. disclosure 화면에서 사용.
   static Future<LocationPermission> permission() => Geolocator.checkPermission();
 
   Future<bool> start() async {
     if (running.value) return true;
-    if (!await Geolocator.isLocationServiceEnabled()) return false;
-    final perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      problem.value = SharingProblem.serviceOff;
       return false;
     }
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      problem.value = SharingProblem.permissionDenied;
+      return false;
+    }
+    if (perm == LocationPermission.deniedForever) {
+      problem.value = SharingProblem.permissionDeniedForever;
+      return false;
+    }
+    problem.value = SharingProblem.none;
 
     _positionSub = Geolocator.getPositionStream(locationSettings: _settings())
         .listen(_onPosition, onError: (Object e) => debugPrint('location error: $e'));
@@ -86,6 +102,7 @@ class LocationService {
     _batterySub = null;
     _heartbeatTimer = null;
     running.value = false;
+    problem.value = SharingProblem.none;
   }
 
   /// 한 번 정확하게 측정한다 (GPS 를 켜서 최대 20초까지 기다림).
@@ -95,6 +112,19 @@ class LocationService {
           timeLimit: Duration(seconds: 20),
         ),
       );
+
+  static const _power = MethodChannel('familylocator/power');
+
+  /// 이 앱이 배터리 최적화(절전) 대상인지 (Android). 그렇다면 화면이 꺼진 뒤
+  /// 폰이 앱을 멈춰 위치 공유가 끊길 수 있다.
+  static Future<bool> isBatteryOptimized() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _power.invokeMethod<bool>('isBatteryOptimized') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Android 12+/iOS 14+ 에서 사용자가 "대략적인 위치"만 허용했는지.
   /// 이 경우 오차가 1~3km 까지 커진다.
