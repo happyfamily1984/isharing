@@ -4,6 +4,7 @@
 #
 # 필요한 GitHub Secret:
 #   GOOGLE_SERVICES_JSON : Firebase 에서 받은 google-services.json 파일 내용 전체
+#   NAVER_MAP_CLIENT_ID  : 네이버 클라우드 플랫폼 Maps 의 Client ID (없으면 지도 대신 안내 문구가 나옴)
 name: Build Android APK
 
 on:
@@ -51,7 +52,12 @@ jobs:
         working-directory: app
 
       - name: Build APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        env:
+          NAVER_MAP_CLIENT_ID: ${{ secrets.NAVER_MAP_CLIENT_ID }}
+        run: >
+          flutter build apk --release
+          --build-number=${{ github.run_number }}
+          --dart-define=NAVER_MAP_CLIENT_ID="$NAVER_MAP_CLIENT_ID"
         working-directory: app
 
       - name: Publish test release

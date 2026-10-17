@@ -1,12 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../config.dart';
 import '../models/member.dart';
-import '../widgets/map_tiles.dart';
+import '../widgets/family_map.dart';
 import '../services/auth_service.dart';
 import '../services/backend.dart';
 import '../services/group_service.dart';
@@ -27,7 +25,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _map = MapController();
+  final _map = FamilyMapController();
   final _members = MembersController();
   List<Group> _groups = const [];
   StreamSubscription<List<Group>>? _groupsSub;
@@ -71,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onMembersChanged() {
     if (!_centeredOnce && _members.me?.position != null) {
       _centeredOnce = true;
-      _map.move(_members.me!.position!, 15);
+      _map.moveTo(_members.me!.position!, zoom: 15);
     }
   }
 
@@ -114,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openMember(Member m) {
-    if (m.position != null) _map.move(m.position!, 16);
+    if (m.position != null) _map.moveTo(m.position!, zoom: 16);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -161,30 +159,29 @@ class _HomeScreenState extends State<HomeScreen> {
           final located = all.where((m) => m.position != null && m.sharing).toList();
           return Stack(
             children: [
-              FlutterMap(
-                mapController: _map,
-                options: const MapOptions(
-                  initialCenter: LatLng(37.5665, 126.9780), // 서울시청
-                  initialZoom: 11,
-                ),
-                children: [
-                  const AppTileLayer(),
-                  MarkerLayer(
-                    markers: [
-                      for (final m in located)
-                        Marker(
-                          point: m.position!,
-                          width: 120,
-                          height: 72,
-                          alignment: Alignment.topCenter,
-                          child: GestureDetector(
-                            onTap: () => _openMember(m),
-                            child: MemberPin(member: m, isMe: m.uid == Backend.uid),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const AppMapAttribution(),
+              FamilyMap(
+                controller: _map,
+                onReady: () {
+                  final me = _members.me?.position;
+                  if (me != null) {
+                    _centeredOnce = true;
+                    _map.moveTo(me, zoom: 15);
+                  }
+                },
+                pins: [
+                  for (final m in located)
+                    MapPin(
+                      id: m.uid,
+                      position: m.position!,
+                      label: m.uid == Backend.uid ? '나' : m.displayName,
+                      subLabel: m.isOnline ? null : '마지막 위치',
+                      color: m.uid == Backend.uid
+                          ? Theme.of(context).colorScheme.tertiary
+                          : m.isOnline
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey,
+                      onTap: () => _openMember(m),
+                    ),
                 ],
               ),
               if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),
@@ -351,44 +348,6 @@ class MemberAvatar extends StatelessWidget {
       backgroundColor: online ? scheme.primary : scheme.outline,
       foregroundColor: online ? scheme.onPrimary : scheme.surface,
       child: Text(member.displayName.characters.first),
-    );
-  }
-}
-
-class MemberPin extends StatelessWidget {
-  const MemberPin({super.key, required this.member, required this.isMe});
-  final Member member;
-  final bool isMe;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
-          ),
-          child: Text(
-            member.isOnline ? member.displayName : '${member.displayName} · 마지막 위치',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
-          ),
-        ),
-        const SizedBox(height: 2),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: isMe ? scheme.tertiary : Colors.white, width: 3),
-          ),
-          child: MemberAvatar(member: member, radius: 18),
-        ),
-      ],
     );
   }
 }

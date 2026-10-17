@@ -40,12 +40,12 @@ dependencies:
   cloud_functions: ^7.0.0
   firebase_messaging: ^17.0.0
   geolocator: ^14.1.1
-  flutter_map: ^8.3.2
   latlong2: ^0.10.1
   battery_plus: ^7.1.2
   intl: ^0.20.3
   url_launcher: ^6.3.3
   google_sign_in: ^7.2.0
+  flutter_naver_map: ^1.4.4
 dev_dependencies:
   flutter_test:
     sdk: flutter
