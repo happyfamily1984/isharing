@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:latlong2/latlong.dart' show LatLng;
+import 'package:latlong2/latlong.dart' show Distance, LatLng;
 
 import '../config.dart';
 
@@ -55,6 +55,7 @@ class FamilyMapController {
   Future<void> _update(NCameraUpdate update) async {
     final map = _map;
     if (map == null) return;
+    update.setAnimation(duration: const Duration(milliseconds: 600));
     try {
       await map.updateCamera(update);
     } catch (e) {
@@ -73,13 +74,24 @@ class FamilyMapController {
     return LatLng(target.latitude, target.longitude);
   }
 
-  /// 모든 점이 화면에 들어오게 맞춘다.
+  /// 모든 점이 화면 가운데에 다 보이도록 위치와 확대 수준을 맞춘다.
+  /// 한 자리에 모여 있는 점(머문 곳)은 너무 확대되지 않게 적당한 수준으로 보여준다.
   Future<void> fit(List<LatLng> points) async {
     if (points.isEmpty) return;
-    if (points.length == 1) return moveTo(points.first, zoom: 16);
+    final bounds = NLatLngBounds.from(points.map(_n));
+    const distance = Distance();
+    final spanMeters = distance(
+      LatLng(bounds.southWest.latitude, bounds.southWest.longitude),
+      LatLng(bounds.northEast.latitude, bounds.northEast.longitude),
+    );
+    if (spanMeters < 150) {
+      final c = bounds.center;
+      return moveTo(LatLng(c.latitude, c.longitude), zoom: 16);
+    }
+    // 위아래는 핀 이름표가 잘리지 않게 여백을 더 둔다.
     await _update(NCameraUpdate.fitBounds(
-      NLatLngBounds.from(points.map(_n)),
-      padding: const EdgeInsets.all(56),
+      bounds,
+      padding: const EdgeInsets.fromLTRB(48, 72, 48, 72),
     ));
   }
 }
