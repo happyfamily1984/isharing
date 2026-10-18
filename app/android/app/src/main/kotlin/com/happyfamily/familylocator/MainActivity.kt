@@ -39,5 +39,26 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // 위치 공유 백그라운드 서비스 (앱을 닫아도 계속 동작)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "familylocator/tracking")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        try {
+                            LocationTrackingService.start(this)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("start_failed", e.message, null)
+                        }
+                    }
+                    "stop" -> {
+                        LocationTrackingService.stop(this)
+                        result.success(null)
+                    }
+                    "isRunning" -> result.success(LocationTrackingService.isRunning)
+                    else -> result.notImplemented()
+                }
+            }
     }
 }

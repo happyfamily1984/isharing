@@ -17,7 +17,8 @@ enum SharingProblem { none, serviceOff, permissionDenied, permissionDeniedForeve
 /// - users/{uid}.lastLocation : 최신 위치 (전원이 꺼져도 마지막 위치가 남는다)
 /// - users/{uid}/locations    : 시간대별 이동경로
 ///
-/// Android 에서는 상시 알림이 있는 포그라운드 서비스로 동작해 앱을 닫아도 계속 수집한다.
+/// Android 에서는 네이티브 포그라운드 서비스(LocationTrackingService)가 앱 화면과 별도로
+/// 수집해, 앱을 밀어서 닫거나 재부팅해도 계속 올린다. iOS 는 geolocator 백그라운드 위치를 쓴다.
 class LocationService {
   LocationService._();
   static final instance = LocationService._();
@@ -50,8 +51,11 @@ class LocationService {
   /// 권한 상태. disclosure 화면에서 사용.
   static Future<LocationPermission> permission() => Geolocator.checkPermission();
 
+  static const _tracking = MethodChannel('familylocator/tracking');
+
   Future<bool> start() async {
-    if (running.value) return true;
+    // Android 는 서비스가 정리됐을 수 있어 매번 다시 시작을 요청한다 (이미 돌고 있으면 그대로 유지).
+    if (running.value && !Platform.isAndroid) return true;
     if (!await Geolocator.isLocationServiceEnabled()) {
       problem.value = SharingProblem.serviceOff;
       return false;
@@ -66,6 +70,17 @@ class LocationService {
       return false;
     }
     problem.value = SharingProblem.none;
+
+    if (Platform.isAndroid) {
+      try {
+        await _tracking.invokeMethod<bool>('start');
+        running.value = true;
+        return true;
+      } catch (e) {
+        debugPrint('tracking service failed: $e');
+        return false;
+      }
+    }
 
     _positionSub = Geolocator.getPositionStream(locationSettings: _settings())
         .listen(_onPosition, onError: (Object e) => debugPrint('location error: $e'));
@@ -95,6 +110,13 @@ class LocationService {
   }
 
   Future<void> stop() async {
+    if (Platform.isAndroid) {
+      try {
+        await _tracking.invokeMethod<void>('stop');
+      } catch (e) {
+        debugPrint('tracking service stop failed: $e');
+      }
+    }
     await _positionSub?.cancel();
     await _batterySub?.cancel();
     _heartbeatTimer?.cancel();
@@ -137,20 +159,6 @@ class LocationService {
   }
 
   LocationSettings _settings() {
-    if (Platform.isAndroid) {
-      return AndroidSettings(
-        accuracy: LocationAccuracy.best,
-        distanceFilter: 10,
-        intervalDuration: const Duration(seconds: 15),
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: '패밀리 위치 공유 중',
-          notificationText: '그룹 멤버에게 내 위치를 공유하고 있어요. 앱에서 언제든 중지할 수 있어요.',
-          notificationChannelName: '위치 공유',
-          enableWakeLock: true,
-          setOngoing: true,
-        ),
-      );
-    }
     if (Platform.isIOS) {
       return AppleSettings(
         accuracy: LocationAccuracy.best,

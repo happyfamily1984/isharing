@@ -5,7 +5,7 @@
 
 | 기능 | 구현 방식 |
 | --- | --- |
-| 실시간 위치 공유 | `geolocator` 포그라운드 서비스(Android)/백그라운드 위치(iOS) → Firestore `users/{uid}.lastLocation` |
+| 실시간 위치 공유 | Android: 네이티브 포그라운드 서비스 `LocationTrackingService`(앱을 닫거나 재부팅해도 계속) / iOS: `geolocator` 백그라운드 위치 → Firestore `users/{uid}.lastLocation` |
 | 시간대별 이동경로 | 50m 이상 이동할 때마다 `users/{uid}/locations` 에 기록 → 날짜 + 시간대 슬라이더로 지도에 경로 표시 |
 | 벨 울리기 (무음 무시) | Cloud Function → FCM 고우선순위 메시지 → **네이티브** `RingReceiver`/`RingService`가 알람 스트림을 최대 볼륨으로 1분간 재생 |
 | 장소 도착 알림 | 그룹에 집·회사 등 장소를 등록하면, 가족이 도착할 때 다른 가족에게 "OO님이 집에 도착했어요" 알림 (서버 `onLocationChanged`) |
@@ -26,6 +26,8 @@ app/              Flutter 앱 (Android, iOS)
   android/app/src/main/kotlin/.../
     RingReceiver.kt         FCM 'ring' 메시지 수신 (앱이 꺼져 있어도 동작)
     RingService.kt          알람 스트림 재생 + "벨 끄기" 알림
+    LocationTrackingService.kt  위치 공유 포그라운드 서비스 (앱 화면과 별도로 동작)
+    BootReceiver.kt         재부팅·업데이트 후 위치 공유 자동 재시작
 functions/        Cloud Functions (TypeScript) - 그룹/초대/승인/벨/데이터 정리
 firestore.rules   보안 규칙 - 같은 그룹 멤버만 위치 열람 가능
 rules-test/       보안 규칙 테스트 (Firestore 에뮬레이터)
@@ -120,6 +122,6 @@ cd rules-test && npm install && npm test
   승인 전에는 iOS에서 일반 알림음(무음 모드에선 진동)으로만 울립니다.
 - **Android 방해금지 모드**: 알람 스트림을 쓰므로 대부분의 기기에서 무음/진동 모드여도 울리지만,
   사용자가 방해금지 모드에서 "알람"까지 막아두면 울리지 않을 수 있습니다.
-- **휴대폰 재시작 후**: Android에서 재부팅하면 앱을 한 번 열어야 위치 공유가 다시 시작됩니다.
-  (부팅 시 자동 시작은 추후 과제)
+- **휴대폰 재시작 후**: Android는 `BootReceiver`가 위치 공유를 자동으로 다시 시작합니다
+  (위치 권한 "항상 허용" 필요). 일부 제조사 절전 기능이 막으면 앱을 한 번 열면 됩니다.
 - **지도**: 네이버 지도(`flutter_naver_map`)를 씁니다. 아래 "네이버 지도 설정" 참고.

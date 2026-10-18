@@ -77,3 +77,10 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // 백그라운드 위치 서비스(LocationTrackingService)용. 버전은 Flutter Firebase 플러그인과 맞춘다.
+    implementation(platform("com.google.firebase:firebase-bom:35.0.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+}
