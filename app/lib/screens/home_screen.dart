@@ -131,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
     final sharing = _members.me?.sharing ?? true;
-    if (sharing && !LocationService.instance.running.value) LocationService.instance.start();
+    if (sharing) LocationService.instance.start();
     _checkBattery();
   }
 
