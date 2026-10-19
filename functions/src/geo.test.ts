@@ -15,18 +15,36 @@ test("distance between Gwacheon station and Seoul City Hall is about 15km", () =
 });
 
 test("first observation never notifies", () => {
-  assert.deepEqual(placeState(undefined, 10, 100), { inside: true, transition: "none" });
+  assert.deepEqual(placeState(undefined, 10, 100, 0, 5), { state: { inside: true, since: 5 }, transition: "none" });
   assert.deepEqual(pairState(undefined, 9000), { far: true, transition: "none" });
 });
 
+const MINUTE = 60 * 1000;
+const away = { inside: false, since: 0 };
+const home0 = { inside: true, since: 0 };
+
 test("arriving at a place", () => {
-  assert.equal(placeState(false, 80, 100).transition, "enter");
-  assert.equal(placeState(false, 120, 100).transition, "none");
+  assert.equal(placeState(away, 80, 100, 10, 60 * MINUTE).transition, "enter");
+  assert.equal(placeState(away, 120, 100, 10, 60 * MINUTE).transition, "none");
 });
 
 test("GPS jitter just outside the radius does not count as leaving", () => {
-  assert.deepEqual(placeState(true, 130, 100), { inside: true, transition: "none" });
-  assert.equal(placeState(true, 160, 100).transition, "exit");
+  assert.equal(placeState(home0, 350, 100, 10, MINUTE).state.inside, true); // 가까운 곳 다녀오기
+  assert.equal(placeState(home0, 430, 100, 10, MINUTE).transition, "exit");
+});
+
+test("an inaccurate indoor fix far away does not count as leaving", () => {
+  // 오차 200m 짜리 위치가 550m 떨어져 찍혀도 집 안으로 본다
+  assert.equal(placeState(home0, 550, 100, 200, MINUTE).state.inside, true);
+});
+
+test("coming back soon after leaving does not notify again", () => {
+  const left = placeState(home0, 800, 100, 10, 60 * MINUTE).state; // 나감
+  const back = placeState(left, 20, 100, 10, 70 * MINUTE); // 10분 만에 돌아옴
+  assert.equal(back.transition, "none");
+  assert.equal(back.state.inside, true);
+  const later = placeState(left, 20, 100, 10, 80 * MINUTE); // 20분 뒤 돌아옴
+  assert.equal(later.transition, "enter");
 });
 
 test("5km far/near with hysteresis", () => {

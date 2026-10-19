@@ -16,8 +16,14 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** 장소를 벗어났다고 보려면 반경보다 이만큼 더 멀어져야 한다 (경계에서 GPS 흔들림으로 알림이 반복되지 않게). */
-export const PLACE_EXIT_MARGIN_M = 50;
+/**
+ * 장소를 벗어났다고 보려면 반경보다 이만큼 더 멀어져야 한다.
+ * 집 앞 편의점처럼 가까이 다녀오거나 GPS 가 튀어도 "도착" 알림이 다시 가지 않게 넉넉히 둔다.
+ */
+export const PLACE_EXIT_MARGIN_M = 300;
+
+/** 장소를 벗어난 뒤 이 시간 안에 다시 들어오면 도착 알림을 보내지 않는다 (실내 GPS 튐, 잠깐 외출). */
+export const PLACE_REARRIVE_MS = 15 * 60 * 1000;
 
 /** 거리 알림 기본 기준 (사용자가 설정에서 1/3/5/10km 중 고른다) */
 export const DEFAULT_DISTANCE_KM = 5;
@@ -31,19 +37,37 @@ export const MAX_ACCURACY_M = 300;
 
 export type Transition = "enter" | "exit" | "none";
 
+/** 장소별로 기억하는 상태 */
+export interface PlaceMemo {
+  inside: boolean;
+  /** 지금 상태(안/밖)가 시작된 시각 (ms) */
+  since: number;
+}
+
 /**
  * 장소 안/밖 판단.
- * [wasInside] 가 undefined 면 처음 판단하는 것이라 알림 없이 상태만 정한다
+ * [prev] 가 없으면 처음 판단하는 것이라 알림 없이 상태만 정한다
  * (앱을 집에서 처음 켰을 때 "도착" 알림이 가지 않도록).
+ *
+ * 실내에서는 위치가 수십~수백 m 씩 튀므로
+ * - 나갔다고 보려면 오차([accuracy])를 빼고도 반경 + 300m 보다 멀어야 하고
+ * - 나간 지 15분이 안 돼 다시 들어오면 도착 알림 없이 "안"으로만 되돌린다.
  */
 export function placeState(
-  wasInside: boolean | undefined,
+  prev: PlaceMemo | undefined,
   distance: number,
   radius: number,
-): { inside: boolean; transition: Transition } {
-  const inside = wasInside ? distance <= radius + PLACE_EXIT_MARGIN_M : distance <= radius;
-  if (wasInside === undefined || inside === wasInside) return { inside, transition: "none" };
-  return { inside, transition: inside ? "enter" : "exit" };
+  accuracy = 0,
+  nowMs = Date.now(),
+): { state: PlaceMemo; transition: Transition } {
+  const inside = prev?.inside
+    ? distance - Math.max(accuracy, 0) <= radius + PLACE_EXIT_MARGIN_M
+    : distance <= radius;
+  if (prev === undefined) return { state: { inside, since: nowMs }, transition: "none" };
+  if (inside === prev.inside) return { state: prev, transition: "none" };
+  const state = { inside, since: nowMs };
+  if (!inside) return { state, transition: "exit" };
+  return { state, transition: nowMs - prev.since >= PLACE_REARRIVE_MS ? "enter" : "none" };
 }
 
 /** 설정값을 허용된 기준(km)으로 정리한다. */
