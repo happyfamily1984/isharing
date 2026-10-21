@@ -12,6 +12,7 @@ import {
   normalizeDistanceKm,
   pairState,
   placeState,
+  PlaceMemo,
   TogetherState,
   updateTogether,
   watchKey,
@@ -373,34 +374,48 @@ export const onLocationChanged = onDocumentUpdated("users/{uid}", async (event) 
 });
 
 /** 그룹에 등록된 장소에 도착했는지 확인하고, 같은 그룹의 다른 가족에게 알린다. */
-async function checkPlaces(uid: string, me: UserData, loc: LatLng) {
+async function checkPlaces(uid: string, me: UserData, loc: LatLng & { accuracy?: number }) {
   const groupIds = (me.groupIds as string[] | undefined) ?? [];
   if (groupIds.length === 0) return;
 
+  // 위치가 연달아 올라와도 같은 도착을 두 번 알리지 않도록 트랜잭션으로 상태를 읽고 쓴다.
+  const groups = await Promise.all(
+    groupIds.map(async (gid) => {
+      const groupRef = db.collection("groups").doc(gid);
+      const [group, places] = await Promise.all([groupRef.get(), groupRef.collection("places").get()]);
+      return { gid, group, places };
+    }),
+  );
   const stateRef = db.collection("geoState").doc(uid);
-  const prevInside = ((await stateRef.get()).get("inside") as Record<string, boolean>) ?? {};
-  const inside: Record<string, boolean> = {};
-  const arrivals: { members: string[]; name: string; emoji: string }[] = [];
-
-  for (const gid of groupIds) {
-    const groupRef = db.collection("groups").doc(gid);
-    const [group, places] = await Promise.all([groupRef.get(), groupRef.collection("places").get()]);
-    if (!group.exists) continue;
-    for (const p of places.docs) {
-      const key = `${gid}/${p.id}`;
-      const d = distanceMeters(loc, { lat: p.get("lat"), lng: p.get("lng") });
-      const r = placeState(prevInside[key], d, (p.get("radius") as number) ?? 150);
-      inside[key] = r.inside;
-      if (r.transition === "enter") {
-        arrivals.push({
-          members: group.get("members") as string[],
-          name: p.get("name") as string,
-          emoji: (p.get("emoji") as string) ?? "📍",
-        });
+  const now = Date.now();
+  const arrivals = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(stateRef);
+    const prevPlaces = (snap.get("places") as Record<string, PlaceMemo> | undefined) ?? {};
+    // 예전 형식({ inside: { key: boolean } })도 읽는다
+    const oldInside = (snap.get("inside") as Record<string, boolean> | undefined) ?? {};
+    const places: Record<string, PlaceMemo> = {};
+    const found: { members: string[]; name: string; emoji: string }[] = [];
+    for (const { gid, group, places: docs } of groups) {
+      if (!group.exists) continue;
+      for (const p of docs.docs) {
+        const key = `${gid}/${p.id}`;
+        const prev =
+          prevPlaces[key] ?? (key in oldInside ? { inside: oldInside[key], since: 0 } : undefined);
+        const d = distanceMeters(loc, { lat: p.get("lat"), lng: p.get("lng") });
+        const r = placeState(prev, d, (p.get("radius") as number) ?? 150, loc.accuracy ?? 0, now);
+        places[key] = r.state;
+        if (r.transition === "enter") {
+          found.push({
+            members: group.get("members") as string[],
+            name: p.get("name") as string,
+            emoji: (p.get("emoji") as string) ?? "📍",
+          });
+        }
       }
     }
-  }
-  await stateRef.set({ inside, updatedAt: FieldValue.serverTimestamp() });
+    tx.set(stateRef, { places, updatedAt: FieldValue.serverTimestamp() });
+    return found;
+  });
 
   for (const a of arrivals) {
     const others = a.members.filter((m) => m !== uid);
