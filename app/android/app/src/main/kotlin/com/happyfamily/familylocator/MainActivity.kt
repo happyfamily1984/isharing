@@ -1,6 +1,8 @@
 package com.happyfamily.familylocator
 
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.os.Build
 import android.os.PowerManager
 import io.flutter.embedding.android.FlutterActivity
@@ -25,6 +27,21 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "isRinging" -> result.success(RingService.isRinging)
+                    // 벨이 울릴 때 화면 전체 안내 창(터치하면 끄기)을 띄우려면 필요
+                    "canShowOverlay" -> result.success(
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+                    )
+                    "openOverlaySettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName"),
+                                )
+                            )
+                        }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
