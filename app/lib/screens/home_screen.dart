@@ -179,23 +179,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onRing(String fromName) {
     if (!mounted) return;
+    // 폰을 찾았다는 뜻이므로 화면 어디를 눌러도(창 밖, 창 안, 버튼) 벨을 끈다.
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.notifications_active, size: 40),
-        title: const Text('휴대폰 찾기'),
-        content: Text(fromName.isEmpty ? '벨이 울리고 있어요' : '$fromName님이 벨을 울리고 있어요'),
-        actions: [
-          FilledButton(
-            onPressed: () {
-              MessagingService.stopRinging();
-              Navigator.pop(ctx);
-            },
-            child: const Text('벨 끄기'),
+      builder: (ctx) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.pop(ctx),
+        child: AlertDialog(
+          icon: const Icon(Icons.notifications_active, size: 40),
+          title: const Text('휴대폰 찾기'),
+          content: Text(
+            '${fromName.isEmpty ? '벨이 울리고 있어요' : '$fromName님이 벨을 울리고 있어요'}\n아무 곳이나 누르면 꺼져요',
           ),
-        ],
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('벨 끄기'),
+            ),
+          ],
+        ),
       ),
-    );
+    ).then((_) => MessagingService.stopRinging());
   }
 
   /// 나와 해당 멤버가 함께 속한 그룹 중 가장 좋은 요금제 (이동경로 열람 기간 결정)

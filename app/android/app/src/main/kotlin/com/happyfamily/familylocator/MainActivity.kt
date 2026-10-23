@@ -8,6 +8,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    // 벨이 울리는 중에 앱을 열었다면 폰을 찾은 것이므로 벨을 끈다.
+    override fun onResume() {
+        super.onResume()
+        RingService.stopOnReaction(this)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         RingService.ensureChannels(this)
