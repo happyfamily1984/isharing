@@ -68,6 +68,20 @@ class MessagingService {
   static Future<void> ring(String targetUid) =>
       Backend.call('ringDevice', {'targetUid': targetUid});
 
+  /// 벨이 울릴 때 화면 전체 안내 창을 띄울 수 있는지 ("다른 앱 위에 표시" 권한)
+  static Future<bool> canShowRingOverlay() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _ringChannel.invokeMethod<bool>('canShowOverlay') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// "다른 앱 위에 표시" 권한 설정 화면을 연다.
+  static Future<void> openRingOverlaySettings() =>
+      _ringChannel.invokeMethod<void>('openOverlaySettings');
+
   static Future<void> stopRinging() async {
     if (!Platform.isAndroid) return;
     await _ringChannel.invokeMethod<void>('stop');

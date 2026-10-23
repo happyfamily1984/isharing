@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../config.dart';
 import '../services/auth_service.dart';
 import '../services/backend.dart';
 import '../services/location_service.dart';
+import '../services/messaging_service.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 
@@ -158,6 +160,7 @@ class SettingsScreen extends StatelessWidget {
                     onSelectionChanged: (v) => _setAlert('alertDistanceKm', v.first),
                   ),
                 ),
+              if (Platform.isAndroid) const _RingOverlayTile(),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.privacy_tip),
@@ -183,6 +186,59 @@ class SettingsScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// 벨이 울릴 때 화면 전체 안내 창(아무 곳이나 터치하면 끄기)에 필요한 권한 안내.
+class _RingOverlayTile extends StatefulWidget {
+  const _RingOverlayTile();
+
+  @override
+  State<_RingOverlayTile> createState() => _RingOverlayTileState();
+}
+
+class _RingOverlayTileState extends State<_RingOverlayTile> with WidgetsBindingObserver {
+  bool? _allowed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _check();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // 권한 설정 화면에서 돌아오면 다시 확인한다.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _check();
+  }
+
+  Future<void> _check() async {
+    final allowed = await MessagingService.canShowRingOverlay();
+    if (mounted) setState(() => _allowed = allowed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allowed = _allowed;
+    if (allowed == null) return const SizedBox.shrink();
+    return ListTile(
+      leading: const Icon(Icons.touch_app),
+      title: const Text('벨 울릴 때 화면 터치로 끄기'),
+      subtitle: Text(allowed
+          ? '켜짐 · 내 폰 벨이 울리면 화면 아무 곳이나 눌러 끌 수 있어요'
+          : '꺼짐 · 눌러서 "다른 앱 위에 표시"를 허용해 주세요'),
+      trailing: allowed
+          ? const Icon(Icons.check_circle, color: Colors.green)
+          : const Icon(Icons.chevron_right),
+      onTap: allowed ? null : MessagingService.openRingOverlaySettings,
     );
   }
 }

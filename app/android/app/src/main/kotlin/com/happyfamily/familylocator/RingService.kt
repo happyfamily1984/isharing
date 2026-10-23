@@ -10,6 +10,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.provider.Settings
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -28,7 +37,8 @@ import android.util.Log
  * 재생 동안 알람 볼륨을 최대로 올렸다가 종료 시 원래 볼륨으로 되돌린다.
  *
  * 폰을 찾았다는 뜻이므로 화면을 켜거나 끄기(전원 버튼), 잠금 해제, 볼륨 버튼, 앱 열기 등
- * 어떤 반응이든 있으면 벨을 끈다.
+ * 어떤 반응이든 있으면 벨을 끈다. "다른 앱 위에 표시" 권한이 있으면 화면 전체를 덮는
+ * 안내 창을 띄워, 화면이 켜져 있을 때 아무 곳이나 터치해도 끈다.
  */
 class RingService : Service() {
 
@@ -53,6 +63,9 @@ class RingService : Service() {
         @Volatile
         var isRinging = false
             private set
+
+        /** 화면을 덮는 창이 뜬 직후의 터치는 하던 조작이 이어진 것일 수 있어 무시한다. */
+        private const val TOUCH_GRACE_MS = 800L
 
         /** 사용자가 폰에 반응했을 때 (앱 열기 등) 울리는 중이면 끈다. */
         fun stopOnReaction(context: Context) {
@@ -81,6 +94,7 @@ class RingService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val autoStop = Runnable { stopSelf() }
     private var reactionReceiverRegistered = false
+    private var overlay: View? = null
 
     /** 화면 켜기/끄기, 잠금 해제, 볼륨 버튼 → 폰을 찾은 것으로 보고 벨을 끈다. */
     private val reactionReceiver = object : BroadcastReceiver() {
@@ -109,6 +123,7 @@ class RingService : Service() {
         }
 
         if (!isRinging) startRinging()
+        showOverlay(fromName)
         handler.removeCallbacks(autoStop)
         handler.postDelayed(autoStop, RING_DURATION_MS)
         return START_NOT_STICKY
@@ -158,6 +173,67 @@ class RingService : Service() {
                 v.vibrate(pattern, 0)
             }
         }
+    }
+
+    /** 화면 전체를 덮는 "휴대폰 찾기" 창. 아무 곳이나 터치하면 벨을 끈다. */
+    private fun showOverlay(fromName: String) {
+        if (overlay != null) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
+        val shownAt = System.currentTimeMillis()
+        val density = resources.displayMetrics.density
+        fun text(value: String, sizeSp: Float, alpha: Float = 1f) = TextView(this).apply {
+            text = value
+            textSize = sizeSp
+            setTextColor(Color.WHITE)
+            this.alpha = alpha
+            gravity = Gravity.CENTER
+            setPadding(0, (8 * density).toInt(), 0, (8 * density).toInt())
+        }
+        val view = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.argb(235, 255, 107, 129))
+            setPadding((32 * density).toInt(), 0, (32 * density).toInt(), 0)
+            addView(text("🔔", 72f))
+            addView(text("휴대폰 찾기", 30f))
+            addView(text(if (fromName.isBlank()) "벨이 울리고 있어요" else "${fromName}님이 벨을 울리고 있어요", 18f))
+            addView(text("화면 아무 곳이나 누르면 꺼져요", 16f, 0.85f))
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_DOWN &&
+                    System.currentTimeMillis() - shownAt >= TOUCH_GRACE_MS
+                ) {
+                    stopSelf()
+                }
+                true
+            }
+        }
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        )
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(view, params)
+            overlay = view
+        } catch (e: Exception) {
+            Log.w("RingService", "Cannot show ring overlay", e)
+        }
+    }
+
+    private fun hideOverlay() {
+        val view = overlay ?: return
+        overlay = null
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
+        } catch (_: Exception) {}
     }
 
     private fun registerReactionReceiver() {
@@ -212,6 +288,7 @@ class RingService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(autoStop)
+        hideOverlay()
         if (reactionReceiverRegistered) {
             try { unregisterReceiver(reactionReceiver) } catch (_: Exception) {}
             reactionReceiverRegistered = false
