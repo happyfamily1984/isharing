@@ -10,10 +10,23 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        /** 앱 화면이 보이는 중인지 (그때는 알림을 앱 화면 안에서 보여준다) */
+        @Volatile
+        var isVisible = false
+            private set
+    }
+
     // 벨이 울리는 중에 앱을 열었다면 폰을 찾은 것이므로 벨을 끈다.
     override fun onResume() {
         super.onResume()
+        isVisible = true
         RingService.stopOnReaction(this)
+    }
+
+    override fun onPause() {
+        isVisible = false
+        super.onPause()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

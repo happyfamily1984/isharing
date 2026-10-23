@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getMessaging } from "firebase-admin/messaging";
+import { getMessaging, Message } from "firebase-admin/messaging";
 import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -338,19 +338,41 @@ type UserData = FirebaseFirestore.DocumentData;
 /** 이보다 오래된 위치는 거리 비교에 쓰지 않는다 (전원 꺼짐 등) */
 const STALE_LOCATION_MS = 30 * 60 * 1000;
 
-async function notify(user: UserData | undefined, title: string, body: string, type: string) {
+/**
+ * 알림 보내기.
+ * [autoDismissMs] 를 주면 Android 에서는 앱(RingReceiver)이 직접 알림을 띄우고 그 시간이 지나면
+ * 알림창에서 저절로 사라진다 (data 전용 메시지). iOS 는 일반 알림으로 보낸다.
+ */
+async function notify(
+  user: UserData | undefined,
+  title: string,
+  body: string,
+  type: string,
+  autoDismissMs?: number,
+) {
   const token = user?.fcmToken as string | undefined;
   if (!token) return;
+  const message: Message = autoDismissMs
+    ? {
+        token,
+        data: { type, title, body, timeoutMs: String(autoDismissMs) },
+        android: { priority: "high", ttl: autoDismissMs },
+        apns: { payload: { aps: { alert: { title, body }, sound: "default" } } },
+      }
+    : {
+        token,
+        notification: { title, body },
+        data: { type },
+        android: { priority: "high", notification: { channelId: "general" } },
+        apns: { payload: { aps: { sound: "default" } } },
+      };
   await getMessaging()
-    .send({
-      token,
-      notification: { title, body },
-      data: { type },
-      android: { priority: "high", notification: { channelId: "general" } },
-      apns: { payload: { aps: { sound: "default" } } },
-    })
+    .send(message)
     .catch((e) => console.warn("notify failed", e));
 }
+
+/** 거리 알림은 알림창에 이만큼만 떠 있다가 사라진다 */
+const DISTANCE_ALERT_DISMISS_MS = 15 * 1000;
 
 function displayName(user: UserData | undefined): string {
   return (user?.displayName as string | undefined) || "가족";
@@ -491,8 +513,8 @@ async function updateWatch(
 
   const name = displayName(target);
   if (r.transition === "far") {
-    await notify(viewer, "거리 알림", `${name}님과 ${km}km 이상 멀어졌어요`, "distance");
+    await notify(viewer, "거리 알림", `${name}님과 ${km}km 이상 멀어졌어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
   } else if (r.transition === "near") {
-    await notify(viewer, "거리 알림", `${name}님이 ${km}km 이내에 있어요`, "distance");
+    await notify(viewer, "거리 알림", `${name}님이 ${km}km 이내에 있어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
   }
 }

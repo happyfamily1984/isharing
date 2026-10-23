@@ -47,6 +47,9 @@ class MessagingService {
         _incomingRings.add((message.data['fromName'] as String?) ?? '');
       } else if (message.notification?.body != null) {
         _incomingAlerts.add(message.notification!.body!);
+      } else if (message.data['body'] is String) {
+        // 잠깐만 보이는 알림(거리 알림)은 data 로만 온다
+        _incomingAlerts.add(message.data['body'] as String);
       }
     });
   }
