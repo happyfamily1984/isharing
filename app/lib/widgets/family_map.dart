@@ -63,8 +63,20 @@ class FamilyMapController {
     }
   }
 
-  Future<void> moveTo(LatLng target, {double zoom = 15}) =>
-      _update(NCameraUpdate.scrollAndZoomTo(target: _n(target), zoom: zoom));
+  /// 지도 아래쪽이 다른 화면(가족 목록 등)에 가려진 높이(px)와 지도 전체 높이(px).
+  /// 이동·맞추기 할 때 가려지지 않은 부분의 가운데를 기준으로 한다.
+  double bottomCover = 0;
+  double viewHeight = 0;
+
+  double get _coverFraction =>
+      viewHeight <= 0 ? 0 : (bottomCover / viewHeight).clamp(0.0, 0.9);
+
+  Future<void> moveTo(LatLng target, {double zoom = 15}) {
+    final update = NCameraUpdate.scrollAndZoomTo(target: _n(target), zoom: zoom);
+    final cover = _coverFraction;
+    if (cover > 0) update.setPivot(NPoint(0.5, (1 - cover) / 2));
+    return _update(update);
+  }
 
   /// 지금 지도 화면 가운데 좌표
   Future<LatLng?> center() async {
@@ -88,10 +100,10 @@ class FamilyMapController {
       final c = bounds.center;
       return moveTo(LatLng(c.latitude, c.longitude), zoom: 16);
     }
-    // 위아래는 핀 이름표가 잘리지 않게 여백을 더 둔다.
+    // 위아래는 핀 이름표가 잘리지 않게 여백을 더 두고, 아래가 가려져 있으면 그만큼 비운다.
     await _update(NCameraUpdate.fitBounds(
       bounds,
-      padding: const EdgeInsets.fromLTRB(48, 72, 48, 72),
+      padding: EdgeInsets.fromLTRB(48, 72, 48, 72 + _coverFraction * viewHeight),
     ));
   }
 }

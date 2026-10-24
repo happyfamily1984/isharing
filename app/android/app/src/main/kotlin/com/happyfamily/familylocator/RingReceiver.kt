@@ -15,12 +15,22 @@ import android.util.Log
 /**
  * FCM 메시지 브로드캐스트를 직접 수신한다. (firebase_messaging 플러그인의 리시버와 함께 동작)
  * data.type == "ring" 이면 앱이 종료된 상태여도 RingService 를 띄워 벨을 울린다.
+ * data.type == "live" 이면 가족이 지도를 보는 중이라 위치를 잠깐 빠르게 올린다.
  * data.timeoutMs 가 있는 알림(거리 알림)은 직접 띄우고 그 시간이 지나면 알림창에서 지운다.
  * 높은 우선순위(high priority) FCM 수신 직후에는 백그라운드에서도 포그라운드 서비스 시작이 허용된다.
  */
 class RingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val extras = intent.extras ?: return
+        // 가족이 지도를 보는 중: 위치를 잠깐 빠르게 올린다
+        if (extras.getString("type") == "live") {
+            try {
+                LocationTrackingService.live(context, extras.getString("seconds")?.toIntOrNull() ?: 90)
+            } catch (e: Exception) {
+                Log.w("RingReceiver", "Failed to start live location", e)
+            }
+            return
+        }
         if (extras.getString("timeoutMs") != null) {
             showTimedAlert(context, extras)
             return

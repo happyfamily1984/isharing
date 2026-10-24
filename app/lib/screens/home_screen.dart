@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -39,11 +40,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<String>? _ringSub;
   StreamSubscription<String>? _alertSub;
   Timer? _clock;
+  Timer? _live;
   bool _batteryOptimized = false;
   bool _batteryBannerClosed = false;
   StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
   Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
+
+  /// 아래 가족 목록이 화면에서 차지하는 비율 (끌어 올리면 커진다)
+  double _sheetExtent = _sheetInitial;
 
   @override
   void initState() {
@@ -72,6 +77,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _startup());
+    _startLive();
+  }
+
+  /// 앱을 보고 있는 동안 1분마다 가족 폰에 "위치를 빠르게 올려줘" 신호를 보낸다.
+  void _startLive() {
+    _live?.cancel();
+    MessagingService.requestLive();
+    _live = Timer.periodic(const Duration(seconds: 60), (_) => MessagingService.requestLive());
+  }
+
+  void _stopLive() {
+    _live?.cancel();
+    _live = null;
   }
 
   @override
@@ -80,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _ringSub?.cancel();
     _alertSub?.cancel();
     _clock?.cancel();
+    _stopLive();
     WidgetsBinding.instance.removeObserver(this);
     _togetherSub?.cancel();
     _members.dispose();
@@ -129,7 +148,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// 설정에서 GPS·권한을 켜고 돌아오면 바로 공유를 다시 시작한다.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) _stopLive();
     if (state != AppLifecycleState.resumed) return;
+    _startLive();
     final sharing = _members.me?.sharing ?? true;
     if (sharing) LocationService.instance.start();
     _checkBattery();
@@ -338,61 +359,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // 오른쪽 아래: 가족 아이콘을 누르면 그 사람 위치로 이동
               Positioned.fill(
                 child: LayoutBuilder(
-                  builder: (context, box) => Align(
-                    alignment: Alignment.bottomRight,
-                    child: Padding(
-                      // 아래 가족 목록(화면의 25%) 바로 위에 놓는다
-                      padding: EdgeInsets.only(right: 12, bottom: box.maxHeight * 0.25 + 12),
-                      child: _MemberJumpBar(
-                        members: located,
-                        onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
-                        onAll: () => _map.fit(located.map((m) => m.position!).toList()),
+                  builder: (context, box) {
+                    // 지도에서 가족 목록에 가려진 부분: 이동·모두 보기는 보이는 부분 가운데로 맞춘다
+                    final cover = box.maxHeight * _sheetExtent;
+                    _map
+                      ..bottomCover = cover
+                      ..viewHeight = box.maxHeight;
+                    // 가족 목록을 끌어 올려도 아이콘 줄이 그 바로 위에 보이게 한다 (공간이 좁으면 스크롤)
+                    final space = box.maxHeight - cover - 24 - 72;
+                    if (space < 64) return const SizedBox.shrink();
+                    return Align(
+                      alignment: Alignment.bottomRight,
+                      child: Padding(
+                        padding: EdgeInsets.only(right: 12, bottom: cover + 12),
+                        child: _MemberJumpBar(
+                          members: located,
+                          maxHeight: math.min(300, space),
+                          onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
+                          onAll: () => _map.fit(located.map((m) => m.position!).toList()),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
-              DraggableScrollableSheet(
-                initialChildSize: 0.25,
-                minChildSize: 0.12,
-                maxChildSize: 0.7,
-                builder: (context, scroll) => Material(
-                  elevation: 8,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: ListView(
-                    controller: scroll,
-                    children: [
-                      Center(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 10),
-                          width: 36,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                            borderRadius: BorderRadius.circular(2),
+              NotificationListener<DraggableScrollableNotification>(
+                onNotification: (n) {
+                  if ((n.extent - _sheetExtent).abs() > 0.005) setState(() => _sheetExtent = n.extent);
+                  return false;
+                },
+                child: DraggableScrollableSheet(
+                  initialChildSize: _sheetInitial,
+                  minChildSize: 0.12,
+                  maxChildSize: 0.7,
+                  builder: (context, scroll) => Material(
+                    elevation: 8,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    child: ListView(
+                      controller: scroll,
+                      children: [
+                        Center(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 10),
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
                         ),
-                      ),
-                      for (final m in all)
-                        ListTile(
-                          leading: MemberAvatar(member: m),
-                          title: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  m.uid == Backend.uid ? '${m.displayName} (나)' : m.displayName,
-                                  overflow: TextOverflow.ellipsis,
+                        for (final m in all)
+                          ListTile(
+                            leading: MemberAvatar(member: m),
+                            title: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    m.uid == Backend.uid ? '${m.displayName} (나)' : m.displayName,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              OnlineBadge(member: m),
-                            ],
+                                const SizedBox(width: 8),
+                                OnlineBadge(member: m),
+                              ],
+                            ),
+                            subtitle: Text(_listSubtitle(m)),
+                            trailing: BatteryLabel(member: m),
+                            onTap: () => _openMember(m),
                           ),
-                          subtitle: Text(_listSubtitle(m)),
-                          trailing: BatteryLabel(member: m),
-                          onTap: () => _openMember(m),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -404,16 +441,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
+/// 아래 가족 목록의 처음 높이 (화면 비율)
+const _sheetInitial = 0.25;
+
 /// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
 const memberZoom = 15.0;
 
 /// 지도 오른쪽 아래의 가족 아이콘 줄. 누르면 그 사람 위치로 지도를 옮긴다.
 class _MemberJumpBar extends StatelessWidget {
-  const _MemberJumpBar({required this.members, required this.onMember, required this.onAll});
+  const _MemberJumpBar({
+    required this.members,
+    required this.onMember,
+    required this.onAll,
+    this.maxHeight = 300,
+  });
 
   final List<Member> members;
   final void Function(Member) onMember;
   final VoidCallback onAll;
+  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -427,7 +473,7 @@ class _MemberJumpBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: ConstrainedBox(
           // 가족이 많으면 스크롤
-          constraints: const BoxConstraints(maxHeight: 300),
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,

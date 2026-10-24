@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'backend.dart';
@@ -84,6 +85,15 @@ class MessagingService {
   /// "다른 앱 위에 표시" 권한 설정 화면을 연다.
   static Future<void> openRingOverlaySettings() =>
       _ringChannel.invokeMethod<void>('openOverlaySettings');
+
+  /// 지도를 보는 동안 가족 폰이 위치를 2~3초마다 올리도록 요청한다 (90초 유지).
+  static Future<void> requestLive() async {
+    try {
+      await Backend.call('requestLive');
+    } catch (e) {
+      debugPrint('실시간 보기 요청 실패: $e');
+    }
+  }
 
   static Future<void> stopRinging() async {
     if (!Platform.isAndroid) return;

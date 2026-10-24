@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -203,9 +204,10 @@ class LocationService {
     }, SetOptions(merge: true)).then((_) {}, onError: (Object e) => debugPrint('위치 저장 실패: $e')));
 
     final last = _lastHistoryPoint;
+    // 두 위치의 오차를 합친 것보다 덜 움직였으면 GPS 흔들림일 수 있어 이동으로 보지 않는다
     final moved = last == null ||
         Geolocator.distanceBetween(last.latitude, last.longitude, p.latitude, p.longitude) >=
-            _historyMinDistanceM;
+            math.max(_historyMinDistanceM, last.accuracy + p.accuracy);
     if ((moved || force) && p.accuracy <= _historyMaxAccuracyM) {
       _lastHistoryPoint = p;
       unawaited(Backend.userDoc(uid).collection('locations').add({

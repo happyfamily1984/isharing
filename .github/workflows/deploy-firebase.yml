@@ -62,7 +62,7 @@ jobs:
         env:
           PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: |
-          for fn in createGroup regenerateInvite requestJoin respondJoin leaveGroup removeMember deleteMyData ringDevice; do
+          for fn in createGroup regenerateInvite requestJoin respondJoin leaveGroup removeMember deleteMyData ringDevice requestLive; do
             service=$(echo "$fn" | tr '[:upper:]' '[:lower:]')
             gcloud run services add-iam-policy-binding "$service" \
               --project "$PROJECT_ID" --region asia-northeast3 \
