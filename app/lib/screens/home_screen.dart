@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<String>? _ringSub;
   StreamSubscription<String>? _alertSub;
   Timer? _clock;
+  Timer? _live;
   bool _batteryOptimized = false;
   bool _batteryBannerClosed = false;
   StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
@@ -72,6 +73,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _startup());
+    _startLive();
+  }
+
+  /// 앱을 보고 있는 동안 1분마다 가족 폰에 "위치를 빠르게 올려줘" 신호를 보낸다.
+  void _startLive() {
+    _live?.cancel();
+    MessagingService.requestLive();
+    _live = Timer.periodic(const Duration(seconds: 60), (_) => MessagingService.requestLive());
+  }
+
+  void _stopLive() {
+    _live?.cancel();
+    _live = null;
   }
 
   @override
@@ -80,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _ringSub?.cancel();
     _alertSub?.cancel();
     _clock?.cancel();
+    _stopLive();
     WidgetsBinding.instance.removeObserver(this);
     _togetherSub?.cancel();
     _members.dispose();
@@ -129,7 +144,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// 설정에서 GPS·권한을 켜고 돌아오면 바로 공유를 다시 시작한다.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) _stopLive();
     if (state != AppLifecycleState.resumed) return;
+    _startLive();
     final sharing = _members.me?.sharing ?? true;
     if (sharing) LocationService.instance.start();
     _checkBattery();

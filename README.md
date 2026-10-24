@@ -5,7 +5,7 @@
 
 | 기능 | 구현 방식 |
 | --- | --- |
-| 실시간 위치 공유 | Android: 네이티브 포그라운드 서비스 `LocationTrackingService`(앱을 닫거나 재부팅해도 계속) / iOS: `geolocator` 백그라운드 위치 → Firestore `users/{uid}.lastLocation` |
+| 실시간 위치 공유 | Android: 네이티브 포그라운드 서비스 `LocationTrackingService`(앱을 닫거나 재부팅해도 계속, 평소 15초 · 가족이 지도를 보는 동안 2~3초) / iOS: `geolocator` 백그라운드 위치 → Firestore `users/{uid}.lastLocation` |
 | 시간대별 이동경로 | 50m 이상 이동할 때마다 `users/{uid}/locations` 에 기록 → 날짜 + 시간대 슬라이더로 지도에 경로 표시 |
 | 벨 울리기 (무음 무시) | Cloud Function → FCM 고우선순위 메시지 → **네이티브** `RingReceiver`/`RingService`가 알람 스트림을 최대 볼륨으로 1분간 재생 |
 | 장소 도착 알림 | 그룹에 집·회사 등 장소를 등록하면, 가족이 도착할 때 다른 가족에게 "OO님이 집에 도착했어요" 알림 (서버 `onLocationChanged`). 반경 밖 300m 이상 나갔다가 15분 넘게 지나 돌아와야 다시 알림 (GPS 튐·잠깐 외출 무시) |

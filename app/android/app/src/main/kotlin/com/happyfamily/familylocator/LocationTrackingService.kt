@@ -25,6 +25,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 위치 공유 포그라운드 서비스.
@@ -35,6 +36,10 @@ import java.util.concurrent.Executors
  * 앱(Dart)의 LocationService 와 같은 규칙으로 저장한다:
  * - users/{uid}.lastLocation / updatedAt / battery / charging : 최신 위치
  * - users/{uid}/locations : 이동경로 (30m 이상 이동 또는 5분마다, 오차 80m 이하만)
+ *
+ * 가족이 앱에서 지도를 보고 있으면 서버가 "live" 신호를 보내고, 그동안(90초씩 연장)은
+ * 2~3초마다 5m 이상 움직일 때 올린다. 이때 알림 계산은 15초에 한 번만 하도록
+ * 나머지 위치에는 liveOnly 표시를 붙인다.
  */
 class LocationTrackingService : Service() {
 
@@ -44,6 +49,8 @@ class LocationTrackingService : Service() {
         private const val NOTIFICATION_ID = 7002
         private const val PREFS = "location_tracking"
         private const val KEY_ENABLED = "enabled"
+        private const val ACTION_LIVE = "com.happyfamily.familylocator.LIVE"
+        private const val EXTRA_SECONDS = "seconds"
 
         private const val INTERVAL_MS = 15_000L
         private const val MIN_DISTANCE_M = 10f
@@ -51,6 +58,14 @@ class LocationTrackingService : Service() {
         private const val HISTORY_MIN_DISTANCE_M = 30f
         private const val HISTORY_MAX_ACCURACY_M = 80f
         private const val GOOD_ACCURACY_M = 100f
+
+        // 실시간 보기 중
+        private const val LIVE_INTERVAL_MS = 2_500L
+        private const val LIVE_MIN_INTERVAL_MS = 2_000L
+        private const val LIVE_MIN_DISTANCE_M = 5f
+        private const val LIVE_MAX_SECONDS = 180
+        /** 실시간 보기 중에도 알림 계산용 위치는 이 간격으로 올린다 */
+        private const val ALERT_CHECK_MS = 15_000L
 
         @Volatile
         var isRunning = false
@@ -75,6 +90,19 @@ class LocationTrackingService : Service() {
             }
         }
 
+        /** 가족이 지도를 보는 중: [seconds] 동안 위치를 빠르게 올린다. 공유를 꺼 두었으면 무시. */
+        fun live(context: Context, seconds: Int) {
+            if (!isEnabled(context)) return
+            val intent = Intent(context, LocationTrackingService::class.java)
+                .setAction(ACTION_LIVE)
+                .putExtra(EXTRA_SECONDS, seconds.coerceIn(1, LIVE_MAX_SECONDS))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
         fun stop(context: Context) {
             setEnabled(context, false)
             context.stopService(Intent(context, LocationTrackingService::class.java))
@@ -88,6 +116,10 @@ class LocationTrackingService : Service() {
     private var lastUploaded: Location? = null
     private var lastUploadAt = 0L
     private var lastHistory: Location? = null
+    private var liveUntil = 0L
+    private var liveMode = false
+    private var lastAlertCheckAt = 0L
+    private val uploading = AtomicBoolean(false)
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -101,6 +133,19 @@ class LocationTrackingService : Service() {
         override fun run() {
             if (System.currentTimeMillis() - lastUploadAt >= HEARTBEAT_MS - 10_000L) requestFreshLocation()
             handler.postDelayed(this, HEARTBEAT_MS)
+        }
+    }
+
+    /** 실시간 보기 시간이 끝나면 평소 간격으로 돌아간다. */
+    private val liveEnd = object : Runnable {
+        override fun run() {
+            val left = liveUntil - System.currentTimeMillis()
+            if (left > 0) {
+                handler.postDelayed(this, left)
+            } else if (liveMode) {
+                liveMode = false
+                requestUpdates()
+            }
         }
     }
 
@@ -138,12 +183,14 @@ class LocationTrackingService : Service() {
             requestFreshLocation()
             handler.postDelayed(heartbeat, HEARTBEAT_MS)
         }
+        if (intent?.action == ACTION_LIVE) startLive(intent.getIntExtra(EXTRA_SECONDS, 90))
         // 시스템이 서비스를 정리해도 다시 살려낸다.
         return START_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(heartbeat)
+        handler.removeCallbacks(liveEnd)
         try {
             fused.removeLocationUpdates(callback)
         } catch (_: Exception) {
@@ -158,11 +205,31 @@ class LocationTrackingService : Service() {
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    private fun startLive(seconds: Int) {
+        liveUntil = maxOf(liveUntil, System.currentTimeMillis() + seconds * 1000L)
+        handler.removeCallbacks(liveEnd)
+        handler.postDelayed(liveEnd, liveUntil - System.currentTimeMillis())
+        if (!liveMode) {
+            liveMode = true
+            requestUpdates()
+            requestFreshLocation()
+        }
+    }
+
+    /** 평소 또는 실시간 보기 간격으로 위치 갱신을 (다시) 요청한다. */
     private fun requestUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVAL_MS)
-            .setMinUpdateDistanceMeters(MIN_DISTANCE_M)
-            .build()
+        val request = if (liveMode) {
+            LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, LIVE_INTERVAL_MS)
+                .setMinUpdateIntervalMillis(LIVE_MIN_INTERVAL_MS)
+                .setMinUpdateDistanceMeters(LIVE_MIN_DISTANCE_M)
+                .build()
+        } else {
+            LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVAL_MS)
+                .setMinUpdateDistanceMeters(MIN_DISTANCE_M)
+                .build()
+        }
         try {
+            fused.removeLocationUpdates(callback)
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
         } catch (e: SecurityException) {
             Log.e(TAG, "location permission revoked", e)
@@ -190,6 +257,9 @@ class LocationTrackingService : Service() {
             return
         }
         val now = System.currentTimeMillis()
+        val live = liveMode && now < liveUntil
+        // 실시간 보기 중에는 이전 업로드가 아직 안 끝났으면 이번 위치는 건너뛴다 (통신이 느릴 때 쌓이지 않게)
+        if (live && !force && uploading.get()) return
         // 방금 올린 정확한 위치를 오차가 훨씬 큰 위치로 덮어쓰지 않는다.
         val previous = lastUploaded
         if (!force && previous != null &&
@@ -210,12 +280,18 @@ class LocationTrackingService : Service() {
         val moved = lastPoint == null || lastPoint.distanceTo(location) >= HISTORY_MIN_DISTANCE_M
         val addHistory = (moved || force) && location.accuracy <= HISTORY_MAX_ACCURACY_M
         if (addHistory) lastHistory = location
+        // 알림 계산(장소 도착·거리·함께한 시간)은 15초에 한 번만 서버에서 하도록 표시한다
+        val liveOnly = live && now - lastAlertCheckAt < ALERT_CHECK_MS
+        if (!liveOnly) lastAlertCheckAt = now
 
+        uploading.set(true)
         io.execute {
             try {
-                FirestoreRest.upload(uid, location, if (level in 0..100) level else null, charging, addHistory)
+                FirestoreRest.upload(uid, location, if (level in 0..100) level else null, charging, addHistory, liveOnly)
             } catch (e: Exception) {
                 Log.w(TAG, "location upload failed", e)
+            } finally {
+                uploading.set(false)
             }
         }
     }

@@ -309,6 +309,46 @@ export const ringDevice = onCall(async (req) => {
 });
 
 // ---------------------------------------------------------------------------
+// 실시간 보기: 누군가 지도를 보고 있는 동안 가족 폰이 2~3초마다 위치를 올린다
+// ---------------------------------------------------------------------------
+
+/** 신호 한 번에 빠르게 올리는 시간 (앱은 보는 동안 1분마다 다시 보낸다) */
+const LIVE_SECONDS = 90;
+/** 같은 사람이 이보다 자주 요청하면 무시한다 */
+const LIVE_MIN_INTERVAL_MS = 40 * 1000;
+
+export const requestLive = onCall(async (req) => {
+  const uid = requireAuth(req);
+  const ref = db.collection("liveRequests").doc(uid);
+  const fresh = await db.runTransaction(async (tx) => {
+    const last = (await tx.get(ref)).get("at") as Timestamp | undefined;
+    if (last && Date.now() - last.toMillis() < LIVE_MIN_INTERVAL_MS) return false;
+    tx.set(ref, { at: FieldValue.serverTimestamp() });
+    return true;
+  });
+  if (!fresh) return { ok: true, sent: 0 };
+
+  // 내가 볼 수 있는 사람들 = viewers 에 내가 들어 있는 사람들
+  const targets = await db.collection("users").where("viewers", "array-contains", uid).get();
+  const tokens = targets.docs
+    .filter((d) => d.id !== uid && d.get("sharing") !== false)
+    .map((d) => d.get("fcmToken") as string | undefined)
+    .filter((t): t is string => !!t);
+  if (tokens.length === 0) return { ok: true, sent: 0 };
+  // data 전용 + 높은 우선순위: 앱이 꺼져 있어도 Android 위치 서비스가 받는다 (예전 버전 앱은 무시)
+  await getMessaging()
+    .sendEach(
+      tokens.map((token) => ({
+        token,
+        data: { type: "live", seconds: String(LIVE_SECONDS) },
+        android: { priority: "high" as const, ttl: 60 * 1000 },
+      })),
+    )
+    .catch((e) => console.warn("live request failed", e));
+  return { ok: true, sent: tokens.length };
+});
+
+// ---------------------------------------------------------------------------
 // 오래된 이동경로 정리 (개인정보 최소 보관)
 // ---------------------------------------------------------------------------
 
@@ -387,6 +427,8 @@ export const onLocationChanged = onDocumentUpdated("users/{uid}", async (event) 
   if (prev && prev.lat === loc.lat && prev.lng === loc.lng) return; // 위치 외 변경
   if (after.sharing === false) return;
   if ((loc.accuracy ?? 0) > MAX_ACCURACY_M) return;
+  // 실시간 보기 중 2~3초마다 오는 위치는 지도 표시용이라 알림 계산은 15초마다 오는 위치로만 한다
+  if (after.liveOnly === true) return;
 
   const uid = event.params.uid;
   await Promise.all([

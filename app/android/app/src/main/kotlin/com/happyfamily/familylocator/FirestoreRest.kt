@@ -25,7 +25,14 @@ import java.util.concurrent.TimeUnit
 object FirestoreRest {
     private val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
-    fun upload(uid: String, location: Location, battery: Int?, charging: Boolean, addHistory: Boolean) {
+    fun upload(
+        uid: String,
+        location: Location,
+        battery: Int?,
+        charging: Boolean,
+        addHistory: Boolean,
+        liveOnly: Boolean = false,
+    ) {
         val user = FirebaseAuth.getInstance().currentUser ?: return
         val token = Tasks.await(user.getIdToken(false), 30, TimeUnit.SECONDS).token ?: return
         val projectId = FirebaseApp.getInstance().options.projectId ?: return
@@ -44,7 +51,9 @@ object FirestoreRest {
                 )
             )
             .put("charging", JSONObject().put("booleanValue", charging))
-        val mask = JSONArray().put("lastLocation").put("charging")
+            // true 면 지도 표시용 위치라 서버가 알림 계산을 건너뛴다
+            .put("liveOnly", JSONObject().put("booleanValue", liveOnly))
+        val mask = JSONArray().put("lastLocation").put("charging").put("liveOnly")
         if (battery != null) {
             fields.put("battery", JSONObject().put("integerValue", battery.toString()))
             mask.put("battery")
