@@ -91,7 +91,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   List<LocationPoint> get _visible => _selected?.points ?? _points;
 
-  void _fit() => _map.fit(_visible.map((p) => p.position).toList());
+  void _fit() => _map.fit(_selected == null
+      ? routeLine(_segments, _points)
+      : _visible.map((p) => p.position).toList());
 
   void _select(RouteSegment? segment) {
     setState(() => _selected = segment);
@@ -128,8 +130,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
-    final line = visible.map((p) => p.position).toList();
     final selected = _selected;
+    final dayLine = routeLine(_segments, _points);
+    final line = selected == null ? dayLine : visible.map((p) => p.position).toList();
+    // 하루 전체를 볼 때 처음·끝이 머문 곳이면 그 곳 표시(시간 포함)가 출발·마지막을 대신한다
+    final startsAtStay = selected == null && _segments.isNotEmpty && _segments.first.isStay;
+    final endsAtStay = selected == null && _segments.isNotEmpty && _segments.last.isStay;
     final scheme = Theme.of(context).colorScheme;
     final time = DateFormat('HH:mm');
     final days = [for (var i = 0; i < _days; i++) _today().subtract(Duration(days: i))];
@@ -208,7 +214,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     // 구간을 골랐으면 하루 전체 경로는 흐리게, 고른 구간은 진하게
                     MapLine(
                       id: 'day',
-                      points: _points.map((p) => p.position).toList(),
+                      points: dayLine,
                       color: selected == null ? scheme.primary : scheme.outlineVariant,
                       width: selected == null ? 6 : 4,
                     ),
@@ -232,14 +238,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         color: scheme.secondary,
                       )
                     else ...[
-                      if (line.isNotEmpty)
+                      if (line.isNotEmpty && !startsAtStay)
                         MapPin(
                           id: 'start',
                           position: line.first,
                           label: '출발 ${time.format(visible.first.time)}',
                           color: scheme.tertiary,
                         ),
-                      if (line.length > 1)
+                      if (line.length > 1 && !endsAtStay)
                         MapPin(
                           id: 'end',
                           position: line.last,

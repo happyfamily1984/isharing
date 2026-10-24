@@ -14,7 +14,15 @@ class RouteSegment {
 
   Duration get duration => end.difference(start);
 
-  LatLng get center => points.first.position;
+  /// 머문 곳의 대표 위치 (GPS 가 흔들린 점들의 평균)
+  LatLng get center {
+    var lat = 0.0, lng = 0.0;
+    for (final p in points) {
+      lat += p.position.latitude;
+      lng += p.position.longitude;
+    }
+    return LatLng(lat / points.length, lng / points.length);
+  }
 
   double get distanceMeters {
     const d = Distance();
@@ -85,4 +93,29 @@ List<RouteSegment> buildSegments(List<LocationPoint> points) {
   }
   flushMove();
   return segments;
+}
+
+/// 지도에 그릴 하루 경로.
+///
+/// 머문 곳에서는 실내 GPS 가 수십 m 씩 흔들려 점을 그대로 이으면 제자리에서 이리저리
+/// 움직인 것처럼 보이므로, 머문 곳은 대표 위치 한 점으로 줄이고 이동 구간만 선으로 잇는다.
+/// 구간으로 묶이지 않으면(기록이 아주 적을 때) 원래 점을 그대로 쓴다.
+List<LatLng> routeLine(List<RouteSegment> segments, List<LocationPoint> points) {
+  if (segments.isEmpty) return points.map((p) => p.position).toList();
+  final line = <LatLng>[];
+  for (var i = 0; i < segments.length; i++) {
+    final s = segments[i];
+    if (s.isStay) {
+      line.add(s.center);
+      continue;
+    }
+    var pts = s.points.map((p) => p.position).toList();
+    // 머문 곳과 맞닿은 끝점은 그 곳의 대표 위치로 대신한다.
+    if (i > 0 && segments[i - 1].isStay && pts.isNotEmpty) pts = pts.sublist(1);
+    if (i + 1 < segments.length && segments[i + 1].isStay && pts.isNotEmpty) {
+      pts = pts.sublist(0, pts.length - 1);
+    }
+    line.addAll(pts);
+  }
+  return line;
 }

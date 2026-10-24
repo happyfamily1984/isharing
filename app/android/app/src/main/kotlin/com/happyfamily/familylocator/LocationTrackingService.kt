@@ -277,7 +277,9 @@ class LocationTrackingService : Service() {
         val charging = batteryManager.isCharging
 
         val lastPoint = lastHistory
-        val moved = lastPoint == null || lastPoint.distanceTo(location) >= HISTORY_MIN_DISTANCE_M
+        // 두 위치의 오차를 합친 것보다 덜 움직였으면 GPS 흔들림일 수 있어 이동으로 보지 않는다
+        val moved = lastPoint == null ||
+            lastPoint.distanceTo(location) >= maxOf(HISTORY_MIN_DISTANCE_M, lastPoint.accuracy + location.accuracy)
         val addHistory = (moved || force) && location.accuracy <= HISTORY_MAX_ACCURACY_M
         if (addHistory) lastHistory = location
         // 알림 계산(장소 도착·거리·함께한 시간)은 15초에 한 번만 서버에서 하도록 표시한다

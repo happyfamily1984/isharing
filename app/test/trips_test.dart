@@ -43,4 +43,35 @@ void main() {
   });
 
   test('empty input', () => expect(buildSegments(const []), isEmpty));
+
+  test('a day at home is drawn as one point, not a zigzag', () {
+    // 집에서 GPS 가 30~80m 씩 흔들리며 5분마다 기록됨
+    final points = [
+      for (var i = 0; i < 60; i++) pt(i.isEven ? 0.0004 : -0.0004, i * 5),
+    ];
+    final segs = buildSegments(points);
+    expect(segs.length, 1);
+    final line = routeLine(segs, points);
+    expect(line.length, 1);
+    expect(line.first.latitude, closeTo(37.5, 0.0001));
+  });
+
+  test('route line joins stays and moves without jitter spurs', () {
+    final points = [
+      pt(0, 0),
+      pt(0.0006, 30), // 집에서 흔들림
+      pt(0.0002, 60),
+      pt(0.010, 61), // 이동
+      pt(0.020, 62),
+      pt(0.030, 63), // 도착
+      pt(0.0303, 100),
+    ];
+    final segs = buildSegments(points);
+    expect(segs.map((s) => s.isStay).toList(), [true, false, true]);
+    final line = routeLine(segs, points);
+    expect(line.first, segs.first.center);
+    expect(line.last, segs.last.center);
+    // 집에서 흔들린 점(0.0006)은 선에 들어가지 않는다
+    expect(line.any((p) => (p.latitude - 37.5006).abs() < 1e-9), isFalse);
+  });
 }
