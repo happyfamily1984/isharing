@@ -87,18 +87,22 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    cd app && flutter pub get && flutter run
    ```
 
-### PC 없이 GitHub로 배포하기 (추천)
+### PC 없이 배포하기 (Claude 작업 환경)
 
-`.github/workflows/` 의 두 워크플로가 GitHub 서버에서 대신 실행됩니다.
+GitHub Actions 무료 시간을 아끼려고 **자동 실행은 꺼 두었습니다** (머지해도 빌드·배포가 돌지 않음).
+대신 Claude 클라우드 작업 환경에서 아래 스크립트로 빌드·배포합니다.
 
-| 워크플로 | 하는 일 | 필요한 Secret |
+| 스크립트 | 하는 일 | 필요한 환경변수 |
 | --- | --- | --- |
-| Deploy Firebase backend | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
-| Build Android APK | 테스트 APK 빌드 → Releases `test-latest` 에 업로드 | `GOOGLE_SERVICES_JSON` |
+| `scripts/deploy_firebase.sh` | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
+| `scripts/build_apk.sh` | 테스트 APK 빌드 (`app/build/app/outputs/flutter-apk/app-release.apk`) | `GOOGLE_SERVICES_JSON`, `NAVER_MAP_CLIENT_ID` |
 
-main 브랜치에 코드가 합쳐지면 자동 실행되고, Actions 탭에서 "Run workflow" 로 수동 실행도 됩니다.
+환경변수는 GitHub Secret 과 같은 값을 Claude 작업 환경 설정(세션 제목 옆 환경 메뉴 > Edit)의
+환경변수/Network secrets 에 넣습니다. 채팅창에 키를 붙여넣지 마세요.
 서비스 계정 키는 Google Cloud 콘솔 > IAM > 서비스 계정에서 만들고 역할 **편집자(Editor)** 와
 **서비스 계정 사용자** 를 부여합니다.
+
+`.github/workflows/` 의 두 워크플로는 남아 있어서 필요하면 Actions 탭 > "Run workflow" 로 직접 실행할 수 있습니다.
 
 ### 네이버 지도 설정
 
