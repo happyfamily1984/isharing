@@ -101,3 +101,12 @@ test("time together is visible only to the two people and never client-written",
   await assertFails(getDoc(doc(as("mallory"), "together/alice_bob")));
   await assertFails(setDoc(doc(as("alice"), "together/alice_bob"), { members: ["alice", "bob"], days: { x: 99999 } }));
 });
+
+test("check-ins are write-only for the owner and validated", async () => {
+  const at = Timestamp.now();
+  await assertSucceeds(setDoc(doc(as("alice"), "checkins/alice"), { lat: 1, lng: 2, accuracy: 10, at }));
+  await assertFails(setDoc(doc(as("bob"), "checkins/alice"), { lat: 1, lng: 2, accuracy: 10, at }));
+  await assertFails(setDoc(doc(as("alice"), "checkins/alice"), { lat: "x", lng: 2 }));
+  await assertFails(setDoc(doc(as("alice"), "checkins/alice"), { lat: 1, lng: 2, viewers: ["mallory"] }));
+  await assertFails(getDoc(doc(as("alice"), "checkins/alice")));
+});

@@ -1,5 +1,6 @@
 gradle-wrapper.jar
 /.gradle
+/build/
 /captures/
 /gradlew
 /gradlew.bat
@@ -15,4 +16,3 @@ key.properties
 
 # Firebase 설정 파일 (각자 Firebase 콘솔에서 내려받기)
 app/google-services.json
-!app/debug.keystore

@@ -2,7 +2,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getMessaging, Message } from "firebase-admin/messaging";
 import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
-import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2";
 import {
@@ -19,7 +19,8 @@ import {
 } from "./geo";
 
 initializeApp();
-setGlobalOptions({ region: "asia-northeast3" }); // 서울
+// 서울. 이 정도 작업에는 CPU 1개가 필요 없어 작게(256MB 메모리에 맞는 1/6 CPU) 잡아 비용을 줄인다.
+setGlobalOptions({ region: "asia-northeast3", cpu: "gcf_gen1", memory: "256MiB" });
 
 const db = getFirestore();
 
@@ -228,6 +229,7 @@ export const deleteMyData = onCall(async (req) => {
   await db.recursiveDelete(db.collection("users").doc(uid));
   // 위치 알림 상태 정리
   await db.collection("geoState").doc(uid).delete();
+  await db.collection("checkins").doc(uid).delete();
   const watches = await Promise.all([
     db.collection("distState").where("viewer", "==", uid).get(),
     db.collection("distState").where("target", "==", uid).get(),
@@ -418,23 +420,22 @@ function displayName(user: UserData | undefined): string {
   return (user?.displayName as string | undefined) || "가족";
 }
 
-export const onLocationChanged = onDocumentUpdated("users/{uid}", async (event) => {
-  const before = event.data?.before.data();
-  const after = event.data?.after.data();
-  const loc = after?.lastLocation as (LatLng & { accuracy?: number }) | undefined;
-  const prev = before?.lastLocation as LatLng | undefined;
-  if (!after || !loc) return;
-  if (prev && prev.lat === loc.lat && prev.lng === loc.lng) return; // 위치 외 변경
-  if (after.sharing === false) return;
+/**
+ * 앱(위치 서비스)이 1분에 한 번(가만히 있으면 5분에 한 번) checkins/{uid} 에 위치를 쓰면
+ * 장소 도착·거리·함께한 시간을 계산한다.
+ * 위치 자체(users/{uid}.lastLocation)는 더 자주 바뀌지만 그때마다 계산하면 비용이 커서 나눠 둔다.
+ */
+export const onCheckin = onDocumentWritten("checkins/{uid}", async (event) => {
+  const data = event.data?.after.data();
+  if (!data) return;
+  const loc = { lat: data.lat as number, lng: data.lng as number, accuracy: data.accuracy as number | undefined };
+  if (typeof loc.lat !== "number" || typeof loc.lng !== "number") return;
   if ((loc.accuracy ?? 0) > MAX_ACCURACY_M) return;
-  // 실시간 보기 중 2~3초마다 오는 위치는 지도 표시용이라 알림 계산은 15초마다 오는 위치로만 한다
-  if (after.liveOnly === true) return;
 
   const uid = event.params.uid;
-  await Promise.all([
-    checkPlaces(uid, after, loc),
-    checkDistances(uid, after, loc),
-  ]);
+  const me = (await db.collection("users").doc(uid).get()).data();
+  if (!me || me.sharing === false) return;
+  await Promise.all([checkPlaces(uid, me, loc), checkDistances(uid, me, loc)]);
 });
 
 /** 그룹에 등록된 장소에 도착했는지 확인하고, 같은 그룹의 다른 가족에게 알린다. */
@@ -477,7 +478,15 @@ async function checkPlaces(uid: string, me: UserData, loc: LatLng & { accuracy?:
         }
       }
     }
-    tx.set(stateRef, { places, updatedAt: FieldValue.serverTimestamp() });
+    // 바뀐 게 없으면 쓰지 않는다 (쓰기 비용 절약)
+    const changed =
+      !snap.exists ||
+      snap.get("places") === undefined ||
+      Object.keys(places).length !== Object.keys(prevPlaces).length ||
+      Object.entries(places).some(
+        ([k, v]) => prevPlaces[k]?.inside !== v.inside || prevPlaces[k]?.since !== v.since,
+      );
+    if (changed) tx.set(stateRef, { places, updatedAt: FieldValue.serverTimestamp() });
     return found;
   });
 
@@ -530,6 +539,8 @@ async function recordTogether(a: string, b: string, distance: number, meetingPoi
     const snap = await tx.get(ref);
     const prev = snap.exists ? (snap.data() as TogetherState) : undefined;
     const next = updateTogether(prev, distance, Date.now(), meetingPoint);
+    // 전에도 지금도 떨어져 있으면 기록할 게 없다 (쓰기 비용 절약)
+    if (!prev?.together && !next.together) return;
     tx.set(ref, { members: [x, y], ...next });
   });
 }

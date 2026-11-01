@@ -8,7 +8,7 @@
 | 실시간 위치 공유 | Android: 네이티브 포그라운드 서비스 `LocationTrackingService`(앱을 닫거나 재부팅해도 계속, 평소 15초 · 가족이 지도를 보는 동안 2~3초) / iOS: `geolocator` 백그라운드 위치 → Firestore `users/{uid}.lastLocation` |
 | 시간대별 이동경로 | 50m 이상 이동할 때마다 `users/{uid}/locations` 에 기록 → 날짜 + 시간대 슬라이더로 지도에 경로 표시 |
 | 벨 울리기 (무음 무시) | Cloud Function → FCM 고우선순위 메시지 → **네이티브** `RingReceiver`/`RingService`가 알람 스트림을 최대 볼륨으로 1분간 재생 |
-| 장소 도착 알림 | 그룹에 집·회사 등 장소를 등록하면, 가족이 도착할 때 다른 가족에게 "OO님이 집에 도착했어요" 알림 (서버 `onLocationChanged`). 반경 밖 300m 이상 나갔다가 15분 넘게 지나 돌아와야 다시 알림 (GPS 튐·잠깐 외출 무시) |
+| 장소 도착 알림 | 그룹에 집·회사 등 장소를 등록하면, 가족이 도착할 때 다른 가족에게 "OO님이 집에 도착했어요" 알림 (서버 `onCheckin`: 앱이 1분에 한 번 `checkins/{uid}` 에 쓰면 계산 → 비용을 무료 한도 안으로 유지). 반경 밖 300m 이상 나갔다가 15분 넘게 지나 돌아와야 다시 알림 (GPS 튐·잠깐 외출 무시) |
 | 거리 알림 | 나와 가족 사이가 설정한 거리(1/3/5/10km, 기본 5km)를 넘거나 다시 들어오면 서로에게 알림. 설정에서 끄고 켤 수 있음 |
 | 함께한 시간 | 두 가족이 100m 안에 있으면 함께한 시간으로 누적(서버). 날짜별로 언제·어디서 함께 있었는지, 등록 장소면 장소 이름으로 표시 |
 | 전원 꺼짐 시 마지막 위치 | 서버에 항상 최신 위치가 남고, 20분 이상 갱신이 없으면 "전원 꺼짐/연결 끊김 · 마지막 위치 N분 전"으로 표시. 배터리 5% 이하가 되면 마지막 위치를 한 번 더 올림 |
@@ -67,8 +67,8 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    - **Firestore** 생성 (리전: `asia-northeast3` 서울 권장)
    - **Blaze 요금제** (Cloud Functions에 필요)
 2. Android 앱 등록 (패키지: `com.happyfamily.familylocator`)
-   - **SHA-1 지문 등록** (구글 로그인에 필요). 테스트 빌드용 키(`app/android/app/debug.keystore`, 공개용 테스트 키)의 지문:
-     `41:A2:A9:DD:A5:8F:D8:C7:6C:13:6D:8D:D7:3A:BE:A3:1C:D8:A1:DB`
+   - **SHA-1 지문 등록** (구글 로그인에 필요). 앱 서명 키(GitHub Secret 에만 있음)의 지문:
+     `1F:B3:6D:6B:10:A3:03:F5:F9:C4:EA:2D:A1:5B:EB:1A:77:0E:69:32`
    - Play 출시 후에는 Play Console > 앱 무결성 > **앱 서명 키 인증서의 SHA-1**도 추가로 등록해야 스토어 버전에서 구글 로그인이 동작함
    - SHA-1 등록과 Google 로그인 사용 설정을 **마친 뒤** `google-services.json` 을 내려받아 `app/android/app/` 에 저장
 3. iOS 앱 등록 (번들 ID: `com.happyfamily.familylocator`) → `GoogleService-Info.plist` 를 Xcode에서 `Runner` 에 추가
@@ -87,18 +87,27 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    cd app && flutter pub get && flutter run
    ```
 
-### PC 없이 GitHub로 배포하기 (추천)
+### PC 없이 GitHub로 배포하기
 
-`.github/workflows/` 의 두 워크플로가 GitHub 서버에서 대신 실행됩니다.
+저장소는 **공개**라 GitHub Actions 를 무료로 무제한 쓴다. main 에 머지되면 자동으로 실행된다.
 
 | 워크플로 | 하는 일 | 필요한 Secret |
 | --- | --- | --- |
 | Deploy Firebase backend | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
-| Build Android APK | 테스트 APK 빌드 → Releases `test-latest` 에 업로드 | `GOOGLE_SERVICES_JSON` |
+| Build Android APK | APK 빌드 → Releases `test-latest` 에 업로드 | `GOOGLE_SERVICES_JSON`, `NAVER_MAP_CLIENT_ID`, `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` |
 
-main 브랜치에 코드가 합쳐지면 자동 실행되고, Actions 탭에서 "Run workflow" 로 수동 실행도 됩니다.
 서비스 계정 키는 Google Cloud 콘솔 > IAM > 서비스 계정에서 만들고 역할 **편집자(Editor)** 와
-**서비스 계정 사용자** 를 부여합니다.
+**서비스 계정 사용자** 를 부여한다. Actions 없이 배포하려면 같은 값을 환경변수로 두고
+`scripts/deploy_firebase.sh`, `scripts/build_apk.sh` 를 실행한다.
+
+### 공개 저장소 보안 원칙
+
+- **키는 저장소에 절대 커밋하지 않는다.** google-services.json, 서비스 계정 키, 앱 서명 키(`*.jks`, `key.properties`)는
+  `.gitignore` 에 있고 GitHub Secret 에만 둔다.
+- **서명 키(`ANDROID_KEYSTORE_*`)는 바꾸지 않는다.** 바뀌면 폰에서 업데이트 설치가 안 되고(지우고 다시 설치) 구글 로그인용 SHA-1 도 다시 등록해야 한다.
+  예전 공개 테스트 키(`debug.keystore`)는 더 이상 쓰지 않는다.
+- 위치 데이터는 Firestore 보안 규칙으로 같은 그룹 멤버만 읽을 수 있고, 그룹 가입은 방장 승인이 필요하다 (`rules-test/`).
+- 워크플로는 `push`(main)·수동 실행에만 돌고 외부 PR 에서는 돌지 않아 Secret 이 노출되지 않는다. 외부 Action 은 커밋 SHA 로 고정했다.
 
 ### 네이버 지도 설정
 

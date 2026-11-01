@@ -17,6 +17,9 @@ on:
       - "firebase.json"
       - ".github/workflows/deploy-firebase.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-firebase
   cancel-in-progress: false
@@ -25,9 +28,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -42,7 +45,7 @@ jobs:
         working-directory: functions
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
@@ -56,7 +59,7 @@ jobs:
       # firebase deploy 는 호출형(onCall) 함수의 공개 호출 권한을 "처음 만들 때만" 설정한다.
       # 첫 배포가 중간에 실패하면 이 권한이 빠진 채 남아 앱에서 UNAUTHENTICATED 오류가 나므로
       # 매 배포마다 확실히 설정한다 (이미 있으면 변화 없음). 호출자 인증·권한 검사는 각 함수 코드가 한다.
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
 
       - name: Allow app to call callable functions
         env:

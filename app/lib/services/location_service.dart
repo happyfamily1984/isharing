@@ -43,6 +43,10 @@ class LocationService {
   Position? _lastHistoryPoint;
   Position? _lastUploaded;
   DateTime? _lastUpload;
+  DateTime? _lastCheckin;
+
+  /// 서버 알림 계산용 위치(checkins)는 이 간격으로만 올린다 (비용 절약)
+  static const _checkinInterval = Duration(minutes: 1);
 
   final running = ValueNotifier<bool>(false);
 
@@ -202,6 +206,18 @@ class LocationService {
       'battery': ?level,
       'charging': charging,
     }, SetOptions(merge: true)).then((_) {}, onError: (Object e) => debugPrint('위치 저장 실패: $e')));
+
+    // 서버는 checkins/{uid} 가 바뀔 때만 장소 도착·거리·함께한 시간을 계산한다
+    final now = DateTime.now();
+    if (force || _lastCheckin == null || now.difference(_lastCheckin!) >= _checkinInterval) {
+      _lastCheckin = now;
+      unawaited(Backend.db.collection('checkins').doc(uid).set({
+        'lat': p.latitude,
+        'lng': p.longitude,
+        'accuracy': p.accuracy,
+        'at': FieldValue.serverTimestamp(),
+      }).then((_) {}, onError: (Object e) => debugPrint('checkin 저장 실패: $e')));
+    }
 
     final last = _lastHistoryPoint;
     // 두 위치의 오차를 합친 것보다 덜 움직였으면 GPS 흔들림일 수 있어 이동으로 보지 않는다
