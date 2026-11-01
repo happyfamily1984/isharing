@@ -71,6 +71,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 알림 계산용 위치 (1분에 한 번): 본인만 쓰고, 서버(onCheckin)만 읽는다
+    match /checkins/{uid} {
+      allow read: if false;
+      allow write: if isMe(uid)
+        && request.resource.data.keys().hasOnly(['lat', 'lng', 'accuracy', 'at'])
+        && request.resource.data.lat is number
+        && request.resource.data.lng is number;
+    }
+
     // 위치 알림 상태 (서버 전용)
     match /geoState/{uid} {
       allow read, write: if false;

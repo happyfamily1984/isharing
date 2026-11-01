@@ -31,7 +31,7 @@ object FirestoreRest {
         battery: Int?,
         charging: Boolean,
         addHistory: Boolean,
-        liveOnly: Boolean = false,
+        checkin: Boolean = false,
     ) {
         val user = FirebaseAuth.getInstance().currentUser ?: return
         val token = Tasks.await(user.getIdToken(false), 30, TimeUnit.SECONDS).token ?: return
@@ -51,9 +51,7 @@ object FirestoreRest {
                 )
             )
             .put("charging", JSONObject().put("booleanValue", charging))
-            // true 면 지도 표시용 위치라 서버가 알림 계산을 건너뛴다
-            .put("liveOnly", JSONObject().put("booleanValue", liveOnly))
-        val mask = JSONArray().put("lastLocation").put("charging").put("liveOnly")
+        val mask = JSONArray().put("lastLocation").put("charging")
         if (battery != null) {
             fields.put("battery", JSONObject().put("integerValue", battery.toString()))
             mask.put("battery")
@@ -68,6 +66,27 @@ object FirestoreRest {
                     )
                 )
         )
+        if (checkin) {
+            // 서버가 이 문서가 바뀔 때만 알림을 계산한다 (onCheckin)
+            writes.put(
+                JSONObject()
+                    .put(
+                        "update", JSONObject()
+                            .put("name", "$root/checkins/$uid")
+                            .put(
+                                "fields", JSONObject()
+                                    .put("lat", double(location.latitude))
+                                    .put("lng", double(location.longitude))
+                                    .put("accuracy", double(location.accuracy.toDouble()))
+                            )
+                    )
+                    .put(
+                        "updateTransforms", JSONArray().put(
+                            JSONObject().put("fieldPath", "at").put("setToServerValue", "REQUEST_TIME")
+                        )
+                    )
+            )
+        }
         if (addHistory) {
             writes.put(
                 JSONObject()

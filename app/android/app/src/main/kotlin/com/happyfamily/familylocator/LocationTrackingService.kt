@@ -38,8 +38,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - users/{uid}/locations : 이동경로 (30m 이상 이동 또는 5분마다, 오차 80m 이하만)
  *
  * 가족이 앱에서 지도를 보고 있으면 서버가 "live" 신호를 보내고, 그동안(90초씩 연장)은
- * 2~3초마다 5m 이상 움직일 때 올린다. 이때 알림 계산은 15초에 한 번만 하도록
- * 나머지 위치에는 liveOnly 표시를 붙인다.
+ * 2~3초마다 5m 이상 움직일 때 올린다.
+ *
+ * 서버의 알림 계산(장소 도착·거리·함께한 시간)은 checkins/{uid} 에 쓸 때만 돈다.
+ * 비용을 무료 한도 안으로 줄이려고 1분에 한 번(가만히 있으면 5분 하트비트 때)만 쓴다.
  */
 class LocationTrackingService : Service() {
 
@@ -64,8 +66,8 @@ class LocationTrackingService : Service() {
         private const val LIVE_MIN_INTERVAL_MS = 2_000L
         private const val LIVE_MIN_DISTANCE_M = 5f
         private const val LIVE_MAX_SECONDS = 180
-        /** 실시간 보기 중에도 알림 계산용 위치는 이 간격으로 올린다 */
-        private const val ALERT_CHECK_MS = 15_000L
+        /** 알림 계산용 위치(checkins)는 이 간격으로만 올린다 */
+        private const val ALERT_CHECK_MS = 60_000L
 
         @Volatile
         var isRunning = false
@@ -282,14 +284,14 @@ class LocationTrackingService : Service() {
             lastPoint.distanceTo(location) >= maxOf(HISTORY_MIN_DISTANCE_M, lastPoint.accuracy + location.accuracy)
         val addHistory = (moved || force) && location.accuracy <= HISTORY_MAX_ACCURACY_M
         if (addHistory) lastHistory = location
-        // 알림 계산(장소 도착·거리·함께한 시간)은 15초에 한 번만 서버에서 하도록 표시한다
-        val liveOnly = live && now - lastAlertCheckAt < ALERT_CHECK_MS
-        if (!liveOnly) lastAlertCheckAt = now
+        // 알림 계산(장소 도착·거리·함께한 시간)용 위치는 1분에 한 번만 보낸다
+        val checkin = force || now - lastAlertCheckAt >= ALERT_CHECK_MS
+        if (checkin) lastAlertCheckAt = now
 
         uploading.set(true)
         io.execute {
             try {
-                FirestoreRest.upload(uid, location, if (level in 0..100) level else null, charging, addHistory, liveOnly)
+                FirestoreRest.upload(uid, location, if (level in 0..100) level else null, charging, addHistory, checkin)
             } catch (e: Exception) {
                 Log.w(TAG, "location upload failed", e)
             } finally {
