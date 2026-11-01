@@ -8,10 +8,12 @@
 name: Build Android APK
 
 on:
-  # GitHub Actions 무료 시간을 아끼려고 자동 실행은 끈다 (머지해도 돌지 않음).
-  # 보통은 scripts/ 의 스크립트로 Claude 작업 환경에서 빌드·배포하고,
-  # 필요할 때만 Actions 탭 > Run workflow 로 직접 실행한다.
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/build-apk.yml"
 
 permissions:
   contents: write
@@ -24,14 +26,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
@@ -45,6 +47,25 @@ jobs:
             exit 1
           fi
           printf '%s' "$GOOGLE_SERVICES_JSON" > app/android/app/google-services.json
+
+      # 서명 키는 저장소에 두지 않고 GitHub Secret 에만 둔다 (공개 저장소).
+      # 매번 같은 키로 서명해야 폰에서 "업데이트"로 설치되고 구글 로그인(SHA-1)도 유지된다.
+      - name: Write signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD secret 이 없습니다. README 의 '서명 키'를 참고하세요."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/android/app/release.jks
+          {
+            echo "storeFile=release.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=familylocator"
+            echo "keyPassword=$ANDROID_KEYSTORE_PASSWORD"
+          } > app/android/key.properties
 
       - name: Analyze
         run: flutter analyze

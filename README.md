@@ -67,8 +67,8 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    - **Firestore** 생성 (리전: `asia-northeast3` 서울 권장)
    - **Blaze 요금제** (Cloud Functions에 필요)
 2. Android 앱 등록 (패키지: `com.happyfamily.familylocator`)
-   - **SHA-1 지문 등록** (구글 로그인에 필요). 테스트 빌드용 키(`app/android/app/debug.keystore`, 공개용 테스트 키)의 지문:
-     `41:A2:A9:DD:A5:8F:D8:C7:6C:13:6D:8D:D7:3A:BE:A3:1C:D8:A1:DB`
+   - **SHA-1 지문 등록** (구글 로그인에 필요). 앱 서명 키(GitHub Secret 에만 있음)의 지문:
+     `1F:B3:6D:6B:10:A3:03:F5:F9:C4:EA:2D:A1:5B:EB:1A:77:0E:69:32`
    - Play 출시 후에는 Play Console > 앱 무결성 > **앱 서명 키 인증서의 SHA-1**도 추가로 등록해야 스토어 버전에서 구글 로그인이 동작함
    - SHA-1 등록과 Google 로그인 사용 설정을 **마친 뒤** `google-services.json` 을 내려받아 `app/android/app/` 에 저장
 3. iOS 앱 등록 (번들 ID: `com.happyfamily.familylocator`) → `GoogleService-Info.plist` 를 Xcode에서 `Runner` 에 추가
@@ -87,22 +87,27 @@ docs/PLAY_STORE.md  Play 스토어 출시 체크리스트
    cd app && flutter pub get && flutter run
    ```
 
-### PC 없이 배포하기 (Claude 작업 환경)
+### PC 없이 GitHub로 배포하기
 
-GitHub Actions 무료 시간을 아끼려고 **자동 실행은 꺼 두었습니다** (머지해도 빌드·배포가 돌지 않음).
-대신 Claude 클라우드 작업 환경에서 아래 스크립트로 빌드·배포합니다.
+저장소는 **공개**라 GitHub Actions 를 무료로 무제한 쓴다. main 에 머지되면 자동으로 실행된다.
 
-| 스크립트 | 하는 일 | 필요한 환경변수 |
+| 워크플로 | 하는 일 | 필요한 Secret |
 | --- | --- | --- |
-| `scripts/deploy_firebase.sh` | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
-| `scripts/build_apk.sh` | 테스트 APK 빌드 (`app/build/app/outputs/flutter-apk/app-release.apk`) | `GOOGLE_SERVICES_JSON`, `NAVER_MAP_CLIENT_ID` |
+| Deploy Firebase backend | Cloud Functions + 보안 규칙 배포 | `FIREBASE_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID` |
+| Build Android APK | APK 빌드 → Releases `test-latest` 에 업로드 | `GOOGLE_SERVICES_JSON`, `NAVER_MAP_CLIENT_ID`, `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` |
 
-환경변수는 GitHub Secret 과 같은 값을 Claude 작업 환경 설정(세션 제목 옆 환경 메뉴 > Edit)의
-환경변수/Network secrets 에 넣습니다. 채팅창에 키를 붙여넣지 마세요.
 서비스 계정 키는 Google Cloud 콘솔 > IAM > 서비스 계정에서 만들고 역할 **편집자(Editor)** 와
-**서비스 계정 사용자** 를 부여합니다.
+**서비스 계정 사용자** 를 부여한다. Actions 없이 배포하려면 같은 값을 환경변수로 두고
+`scripts/deploy_firebase.sh`, `scripts/build_apk.sh` 를 실행한다.
 
-`.github/workflows/` 의 두 워크플로는 남아 있어서 필요하면 Actions 탭 > "Run workflow" 로 직접 실행할 수 있습니다.
+### 공개 저장소 보안 원칙
+
+- **키는 저장소에 절대 커밋하지 않는다.** google-services.json, 서비스 계정 키, 앱 서명 키(`*.jks`, `key.properties`)는
+  `.gitignore` 에 있고 GitHub Secret 에만 둔다.
+- **서명 키(`ANDROID_KEYSTORE_*`)는 바꾸지 않는다.** 바뀌면 폰에서 업데이트 설치가 안 되고(지우고 다시 설치) 구글 로그인용 SHA-1 도 다시 등록해야 한다.
+  예전 공개 테스트 키(`debug.keystore`)는 더 이상 쓰지 않는다.
+- 위치 데이터는 Firestore 보안 규칙으로 같은 그룹 멤버만 읽을 수 있고, 그룹 가입은 방장 승인이 필요하다 (`rules-test/`).
+- 워크플로는 `push`(main)·수동 실행에만 돌고 외부 PR 에서는 돌지 않아 Secret 이 노출되지 않는다. 외부 Action 은 커밋 SHA 로 고정했다.
 
 ### 네이버 지도 설정
 
