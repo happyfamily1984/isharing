@@ -74,4 +74,19 @@ void main() {
     // 집에서 흔들린 점(0.0006)은 선에 들어가지 않는다
     expect(line.any((p) => (p.latitude - 37.5006).abs() < 1e-9), isFalse);
   });
+
+  test('day distance counts only moves, not jitter at home', () {
+    final points = [
+      pt(0, 0),
+      pt(0.0006, 30), // 집에서 흔들림 (67m)
+      pt(0.0002, 60),
+      pt(0.010, 61), // 이동 시작
+      pt(0.020, 62),
+      pt(0.030, 63), // 도착 (집에서 약 3.3km)
+      pt(0.0303, 100),
+    ];
+    final km = dayDistanceMeters(buildSegments(points)) / 1000;
+    expect(km, closeTo(3.3, 0.2));
+    expect(dayDistanceMeters(const []), 0);
+  });
 }

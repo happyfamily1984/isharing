@@ -271,7 +271,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ListTile(
                             selected: selected == null,
                             leading: const Icon(Icons.route),
-                            title: const Text('하루 전체'),
+                            title: Text('하루 전체 · ${_km(dayDistanceMeters(_segments))} 이동'),
                             subtitle: Text(
                                 '${time.format(_points.first.time)} ~ ${time.format(_points.last.time)}'
                                 ' · 이동 ${_segments.where((s) => !s.isStay).length}번'),
