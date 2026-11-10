@@ -119,3 +119,8 @@ List<LatLng> routeLine(List<RouteSegment> segments, List<LocationPoint> points) 
   }
   return line;
 }
+
+/// 하루 이동거리(m): 이동 구간 거리의 합.
+/// 머문 곳에서 GPS 가 흔들린 거리와 짧은 오차 이동(300m 미만)은 빼서 실제 움직인 만큼만 센다.
+double dayDistanceMeters(List<RouteSegment> segments) =>
+    segments.where((s) => !s.isStay).fold(0.0, (sum, s) => sum + s.distanceMeters);
