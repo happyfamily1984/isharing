@@ -78,7 +78,7 @@ class GroupsScreen extends StatelessWidget {
           builder: (context, snap) {
             final groups = snap.data ?? const <Group>[];
             return ListView(
-              padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 92, 16, 32),
+              padding: EdgeInsets.fromLTRB(12, MediaQuery.paddingOf(context).top + 72, 12, 24),
               children: [
                 Row(
                   children: [
@@ -100,7 +100,7 @@ class GroupsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
                 if (snap.connectionState == ConnectionState.waiting)
                   const Center(child: CircularProgressIndicator())
                 else if (groups.isEmpty)
@@ -115,25 +115,25 @@ class GroupsScreen extends StatelessWidget {
                 for (final g in groups) _GroupSection(group: g, members: members, run: _run),
                 SoftCard(
                   color: const Color(0xFFE9F7F3),
-                  padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
                   onTap: () => _createGroup(context),
                   child: const Row(
                     children: [
-                      Text('👨‍👩‍👧', style: TextStyle(fontSize: 40)),
-                      SizedBox(width: 14),
+                      Text('👨‍👩‍👧', style: TextStyle(fontSize: 28)),
+                      SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('가족과 함께하는 안전한 위치생활',
-                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.ink)),
-                            SizedBox(height: 4),
+                                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                            SizedBox(height: 2),
                             Text('지금 바로 그룹을 만들어 시작해보세요!',
-                                style: TextStyle(fontSize: 14.5, color: AppColors.sub)),
+                                style: TextStyle(fontSize: 12.5, color: AppColors.sub)),
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+                      Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
                     ],
                   ),
                 ),
@@ -206,20 +206,20 @@ class _GroupSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
                 child: Row(
                   children: [
-                    const IconBubble(Icons.groups, size: 64, background: AppColors.mint),
-                    const SizedBox(width: 16),
+                    const IconBubble(Icons.groups, size: 44, background: AppColors.mint),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(group.name,
-                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.ink)),
-                          const SizedBox(height: 4),
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                          const SizedBox(height: 2),
                           Text('멤버 ${group.members.length}/${plan.maxMembers}명 · 이동경로 ${plan.historyDays}일',
-                              style: const TextStyle(fontSize: 15, color: AppColors.sub)),
+                              style: const TextStyle(fontSize: 12.5, color: AppColors.sub)),
                         ],
                       ),
                     ),
@@ -240,16 +240,16 @@ class _GroupSection extends StatelessWidget {
                     final reqs = snap.data ?? const <JoinRequest>[];
                     if (reqs.isEmpty) return const SizedBox.shrink();
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 8, 6),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('가입 요청',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.ink)),
                           for (final r in reqs)
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: const IconBubble(Icons.person_add, size: 44),
+                              leading: const IconBubble(Icons.person_add, size: 36),
                               title: Text(r.displayName),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -281,10 +281,10 @@ class _GroupSection extends StatelessWidget {
               ],
               const InsetDivider(),
               FeatureRow(
-                leading: const IconBubble(Icons.location_on, size: 52, color: AppColors.primaryDark),
+                leading: const IconBubble(Icons.location_on, size: 40, color: AppColors.primaryDark),
                 title: '장소 (집 · 회사 · 학교)',
                 subtitle: '가족이 도착하면 서로에게 알림이 와요',
-                trailing: const Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+                trailing: const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => PlacesScreen(group: group, myPosition: members.me?.position),
                 )),
@@ -294,7 +294,7 @@ class _GroupSection extends StatelessWidget {
           ),
         ),
         SoftCard(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 6, 6),
           child: ListenableBuilder(
             listenable: members,
             builder: (context, _) => Column(
@@ -302,12 +302,12 @@ class _GroupSection extends StatelessWidget {
               children: [
                 const SectionLabel('멤버'),
                 for (final (i, uid) in _sortedMembers().indexed) ...[
-                  if (i > 0) const InsetDivider(indent: 80),
+                  if (i > 0) const InsetDivider(indent: 60),
                   InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () => _memberActions(context, uid),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Row(
                         children: [
                           _MemberFace(
@@ -315,18 +315,18 @@ class _GroupSection extends StatelessWidget {
                             highlight: uid == Backend.uid,
                             owner: uid == group.ownerId,
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           Flexible(
                             child: Text(_nameOf(uid),
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                                style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: AppColors.ink)),
                           ),
                           if (uid == group.ownerId) ...[
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 8),
                             const TagChip('방장'),
                           ],
                           const Spacer(),
-                          const Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+                          const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
                         ],
                       ),
                     ),
@@ -339,7 +339,7 @@ class _GroupSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size.fromHeight(60)),
+            style: OutlinedButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size.fromHeight(46)),
             icon: const Icon(Icons.logout),
             label: Text(group.name.isEmpty ? '그룹 나가기' : "'${group.name}' 나가기"),
             onPressed: () async {
@@ -385,29 +385,29 @@ class _MemberFace extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Container(
-          width: 60,
-          height: 60,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: highlight ? AppColors.mintSoft : const Color(0xFFEFF2F1),
             border: highlight ? Border.all(color: AppColors.primary, width: 2.5) : null,
           ),
           alignment: Alignment.center,
-          child: AvatarGlyph(emoji, size: 50),
+          child: AvatarGlyph(emoji, size: 36),
         ),
         if (owner)
           Positioned(
             right: -2,
             bottom: -2,
             child: Container(
-              width: 22,
-              height: 22,
+              width: 17,
+              height: 17,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.primary,
                 border: Border.all(color: Colors.white, width: 2),
               ),
-              child: const Icon(Icons.star, size: 13, color: Colors.white),
+              child: const Icon(Icons.star, size: 10, color: Colors.white),
             ),
           ),
       ],
@@ -424,26 +424,26 @@ class _InviteRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final valid = group.inviteValid;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('초대코드', style: TextStyle(fontSize: 15, color: AppColors.sub)),
+                const Text('초대코드', style: TextStyle(fontSize: 12.5, color: AppColors.sub)),
                 const SizedBox(height: 2),
                 Text(
                   valid ? group.inviteCode! : '만료 됨',
                   style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 21,
                       fontWeight: FontWeight.w700,
                       color: AppColors.ink,
                       letterSpacing: valid ? 4 : 0),
                 ),
                 if (valid)
                   Text('${DateFormat('M/d HH:mm').format(group.inviteExpiresAt!)}까지 유효',
-                      style: const TextStyle(fontSize: 13.5, color: AppColors.sub)),
+                      style: const TextStyle(fontSize: 12, color: AppColors.sub)),
               ],
             ),
           ),
@@ -491,7 +491,7 @@ class _CircleAction extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: SizedBox(width: 56, height: 56, child: Icon(icon, size: 28, color: AppColors.primaryDark)),
+          child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 21, color: AppColors.primaryDark)),
         ),
       ),
     );

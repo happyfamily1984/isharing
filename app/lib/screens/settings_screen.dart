@@ -89,7 +89,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const chevron = Icon(Icons.chevron_right, size: 28, color: AppColors.ink);
+    const chevron = Icon(Icons.chevron_right, size: 22, color: AppColors.sub);
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: const PillAppBar(title: '설정'),
@@ -104,13 +104,13 @@ class SettingsScreen extends StatelessWidget {
             final distanceKm = (data['alertDistanceKm'] as num?)?.toInt() ?? 5;
             final name = (data['displayName'] as String?) ?? '';
             return ListView(
-              padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 92, 16, 32),
+              padding: EdgeInsets.fromLTRB(12, MediaQuery.paddingOf(context).top + 72, 12, 24),
               children: [
                 SoftCard(
                   padding: EdgeInsets.zero,
                   child: FeatureRow(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
-                    leading: const IconBubble(Icons.share_location, size: 60),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                    leading: const IconBubble(Icons.share_location, size: 42),
                     title: '내 위치 공유',
                     subtitle: sharing ? '그룹 멤버에게 내 위치를 공유하고 있어요' : '일시중지됨 · 멤버에게 내 위치가 보이지 않아요',
                     trailing: Switch(value: sharing, onChanged: (v) => _setSharing(context, v)),
@@ -121,8 +121,8 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       FeatureRow(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
-                        leading: EmojiBubble((data['avatar'] as String?) ?? '🙂', size: 60),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                        leading: EmojiBubble((data['avatar'] as String?) ?? '🙂', size: 42),
                         title: '프로필 (이름 · 캐릭터)',
                         subtitle: name,
                         trailing: chevron,
@@ -134,8 +134,8 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       const InsetDivider(),
                       FeatureRow(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
-                        leading: const IconBubble(Icons.email, size: 60),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                        leading: const IconBubble(Icons.email, size: 42),
                         title: '계정',
                         subtitle: Backend.auth.currentUser?.email ?? '',
                       ),
@@ -148,21 +148,21 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       FeatureRow(
-                        leading: const IconBubble(Icons.location_on, size: 52),
+                        leading: const IconBubble(Icons.location_on, size: 40),
                         title: '장소 도착 알림',
                         subtitle: '가족이 등록된 장소에 도착하면 알려줘요',
                         trailing: Switch(value: alertPlaces, onChanged: (v) => _setAlert('alertPlaces', v)),
                       ),
                       const InsetDivider(),
                       FeatureRow(
-                        leading: const IconBubble(Icons.people, size: 52),
+                        leading: const IconBubble(Icons.people, size: 40),
                         title: '거리 알림',
                         subtitle: '가족과 ${distanceKm}km 이상 멀어지거나 다시 가까워지면 알려줘요',
                         trailing: Switch(value: alertDistance, onChanged: (v) => _setAlert('alertDistance', v)),
                       ),
                       if (alertDistance)
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                           child: SizedBox(
                             width: double.infinity,
                             child: SegmentedButton<int>(
@@ -187,14 +187,14 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       FeatureRow(
-                        leading: const Icon(Icons.shield, size: 34, color: AppColors.primary),
+                        leading: const Icon(Icons.shield, size: 26, color: AppColors.primary),
                         title: '개인정보처리방침',
                         trailing: chevron,
                         onTap: () => launchUrl(Uri.parse(AppConfig.privacyPolicyUrl)),
                       ),
                       const InsetDivider(),
                       FeatureRow(
-                        leading: const Icon(Icons.logout, size: 32, color: AppColors.ink),
+                        leading: const Icon(Icons.logout, size: 24, color: AppColors.ink),
                         title: '로그아웃',
                         trailing: chevron,
                         onTap: () async {
@@ -265,14 +265,14 @@ class _RingOverlayTileState extends State<_RingOverlayTile> with WidgetsBindingO
       padding: EdgeInsets.zero,
       onTap: allowed ? null : MessagingService.openRingOverlaySettings,
       child: FeatureRow(
-        leading: const IconBubble(Icons.touch_app, size: 52),
+        leading: const IconBubble(Icons.touch_app, size: 40),
         title: '벨 울릴 때 화면 터치로 끄기',
         subtitle: allowed
             ? '켜짐 · 내 폰 벨이 울리면 화면 아무 곳이나 눌러 끌 수 있어요'
             : '꺼짐 · 눌러서 "다른 앱 위에 표시"를 허용해 주세요',
         trailing: allowed
-            ? const Icon(Icons.check_circle, color: AppColors.online, size: 28)
-            : const Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+            ? const Icon(Icons.check_circle, color: AppColors.online, size: 22)
+            : const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
       ),
     );
   }
