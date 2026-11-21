@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/member.dart';
 import '../services/place_service.dart';
 import '../widgets/family_map.dart';
+import '../widgets/ui.dart';
 
 /// 장소 등록·수정. 지도를 움직여 가운데 핀을 장소에 맞춘다.
 class PlaceEditScreen extends StatefulWidget {
@@ -79,8 +80,8 @@ class _PlaceEditScreenState extends State<PlaceEditScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.place == null ? '장소 등록' : '장소 수정'),
+      appBar: PillAppBar(
+        title: widget.place == null ? '장소 등록' : '장소 수정',
         actions: [
           if (widget.place != null)
             IconButton(tooltip: '삭제', icon: const Icon(Icons.delete_outline), onPressed: _delete),

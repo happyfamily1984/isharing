@@ -68,6 +68,20 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # 디자인 시안 글꼴 (Pretendard, SIL Open Font License 1.1 — assets/fonts/Pretendard-LICENSE.txt)
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.ttf
+        - asset: assets/fonts/Pretendard-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.ttf
+          weight: 700
+
+  assets:
+    - assets/avatars/
+    - assets/images/
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

@@ -17,6 +17,7 @@ class Member {
     this.updatedAt,
     this.battery,
     this.charging = false,
+    this.alertsSeenAt,
   });
 
   final String uid;
@@ -30,6 +31,9 @@ class Member {
   final DateTime? updatedAt;
   final int? battery;
   final bool charging;
+
+  /// 알림 목록을 마지막으로 본 시각 (내 정보에서만 쓴다)
+  final DateTime? alertsSeenAt;
 
   factory Member.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? const {};
@@ -46,6 +50,7 @@ class Member {
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
       battery: (d['battery'] as num?)?.toInt(),
       charging: (d['charging'] as bool?) ?? false,
+      alertsSeenAt: (d['alertsSeenAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -67,6 +72,17 @@ class Member {
     final t = updatedAt;
     if (t == null) return '위치 없음';
     return formatAgo(t);
+  }
+
+  /// 카드에 보여줄 짧은 상태: "지금 · 정확도 10m" / 오프라인이면 그 이유
+  String get freshnessText {
+    if (!sharing) return '위치 공유를 잠시 멈췄어요';
+    if (position == null || updatedAt == null) return '위치 공유가 아직 시작되지 않았어요';
+    if (isOnline) {
+      return accuracy == null ? updatedLabel : '$updatedLabel · 정확도 ${accuracy!.round()}m';
+    }
+    final lowBattery = battery != null && battery! <= 5 && !charging;
+    return '${lowBattery ? '배터리 방전 추정' : '오프라인'} · 마지막 위치 $updatedLabel';
   }
 
   /// 목록에 보여줄 한 줄 상태

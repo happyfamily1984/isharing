@@ -3,6 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:latlong2/latlong.dart' show Distance, LatLng;
 
 import '../config.dart';
+import '../services/avatars.dart';
 
 /// 지도 위에 표시할 핀.
 class MapPin {
@@ -122,6 +123,7 @@ class FamilyMap extends StatefulWidget {
     this.initialCenter = const LatLng(37.5665, 126.9780), // 서울시청
     this.initialZoom = 11,
     this.onReady,
+    this.satellite = false,
   });
 
   final FamilyMapController controller;
@@ -135,6 +137,9 @@ class FamilyMap extends StatefulWidget {
   final double initialZoom;
   final VoidCallback? onReady;
 
+  /// 위성 사진 위에 길·이름을 겹친 지도로 보여줄지
+  final bool satellite;
+
   @override
   State<FamilyMap> createState() => _FamilyMapState();
 }
@@ -147,6 +152,9 @@ class _FamilyMapState extends State<FamilyMap> {
     final key = '$emoji|${color.toARGB32()}';
     final cached = _iconCache[key];
     if (cached != null) return cached;
+    // 캐릭터 그림은 미리 불러 둬야 핀 그림에 빠지지 않는다.
+    if (isCharacter(emoji)) await precacheImage(AssetImage(avatarAsset(emoji)), context);
+    if (!mounted) throw StateError('disposed');
     final icon = await NOverlayImage.fromWidget(
       widget: _EmojiPin(emoji: emoji, color: color),
       size: _EmojiPin.size,
@@ -275,6 +283,7 @@ class _FamilyMapState extends State<FamilyMap> {
         initialCameraPosition:
             NCameraPosition(target: _n(widget.initialCenter), zoom: widget.initialZoom),
         locale: const NLocale('ko', 'KR'),
+        mapType: widget.satellite ? NMapType.hybrid : NMapType.basic,
         scaleBarEnable: false,
         indoorEnable: false,
         consumeSymbolTapEvents: false,
@@ -320,7 +329,9 @@ class _EmojiPin extends StatelessWidget {
               border: Border.all(color: color, width: 3.5),
             ),
             alignment: Alignment.center,
-            child: Text(emoji, style: const TextStyle(fontSize: 28, height: 1.1)),
+            child: isCharacter(emoji)
+                ? ClipOval(child: AvatarGlyph(emoji, size: 44))
+                : Text(emoji, style: const TextStyle(fontSize: 28, height: 1.1)),
           ),
         ],
       ),

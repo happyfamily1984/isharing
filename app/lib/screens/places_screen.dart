@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/member.dart';
 import '../services/place_service.dart';
 import 'place_edit_screen.dart';
+import '../widgets/ui.dart';
 
 /// 그룹의 장소 목록. 가족이 여기 등록된 장소에 도착하면 서로에게 알림이 간다.
 class PlacesScreen extends StatelessWidget {
@@ -27,7 +28,7 @@ class PlacesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${group.name} · 장소')),
+      appBar: PillAppBar(title: '${group.name} · 장소'),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(context),
         icon: const Icon(Icons.add_location_alt),

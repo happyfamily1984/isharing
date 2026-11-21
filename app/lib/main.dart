@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'config.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'widgets/ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,12 +31,9 @@ class FamilyLocatorApp extends StatelessWidget {
     return MaterialApp(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.teal,
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      // 디자인 시안은 밝은 화면 하나라 다크 모드에서도 같은 화면을 쓴다.
+      theme: buildAppTheme(),
+      themeMode: ThemeMode.light,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snap) {

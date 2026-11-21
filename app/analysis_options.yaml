@@ -10,6 +10,9 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  errors:
+    # Flutter 3.50 부터 material.dart 가 별도 패키지(material_ui)로 옮겨진다는 안내. 기능은 그대로라 무시한다.
+    deprecated_member_use: ignore
   exclude:
     - build/**
     - android/**
