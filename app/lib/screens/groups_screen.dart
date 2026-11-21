@@ -8,6 +8,7 @@ import '../services/group_service.dart';
 import '../services/plan.dart';
 import '../widgets/ui.dart';
 import 'places_screen.dart';
+import '../services/avatars.dart';
 
 /// 그룹 만들기 / 초대코드로 가입 요청 / 가입 승인 / 멤버 관리.
 class GroupsScreen extends StatelessWidget {
@@ -392,7 +393,7 @@ class _MemberFace extends StatelessWidget {
             border: highlight ? Border.all(color: AppColors.primary, width: 2.5) : null,
           ),
           alignment: Alignment.center,
-          child: Text(emoji, style: const TextStyle(fontSize: 32, height: 1.15)),
+          child: AvatarGlyph(emoji, size: 50),
         ),
         if (owner)
           Positioned(

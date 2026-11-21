@@ -3,6 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:latlong2/latlong.dart' show Distance, LatLng;
 
 import '../config.dart';
+import '../services/avatars.dart';
 
 /// 지도 위에 표시할 핀.
 class MapPin {
@@ -151,6 +152,9 @@ class _FamilyMapState extends State<FamilyMap> {
     final key = '$emoji|${color.toARGB32()}';
     final cached = _iconCache[key];
     if (cached != null) return cached;
+    // 캐릭터 그림은 미리 불러 둬야 핀 그림에 빠지지 않는다.
+    if (isCharacter(emoji)) await precacheImage(AssetImage(avatarAsset(emoji)), context);
+    if (!mounted) throw StateError('disposed');
     final icon = await NOverlayImage.fromWidget(
       widget: _EmojiPin(emoji: emoji, color: color),
       size: _EmojiPin.size,
@@ -325,7 +329,9 @@ class _EmojiPin extends StatelessWidget {
               border: Border.all(color: color, width: 3.5),
             ),
             alignment: Alignment.center,
-            child: Text(emoji, style: const TextStyle(fontSize: 28, height: 1.1)),
+            child: isCharacter(emoji)
+                ? ClipOval(child: AvatarGlyph(emoji, size: 44))
+                : Text(emoji, style: const TextStyle(fontSize: 28, height: 1.1)),
           ),
         ],
       ),

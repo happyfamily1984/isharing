@@ -7,6 +7,7 @@ import '../services/place_service.dart';
 import '../services/together_service.dart';
 import '../widgets/family_map.dart';
 import '../widgets/ui.dart';
+import '../services/avatars.dart';
 
 /// 가족 한 명과 하루 중 언제, 어디서 함께 있었는지.
 class TogetherScreen extends StatefulWidget {
@@ -90,7 +91,7 @@ class _TogetherScreenState extends State<TogetherScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                     child: Row(
                       children: [
-                        Text(widget.member.badge, style: const TextStyle(fontSize: 32)),
+                        AvatarGlyph(widget.member.badge, size: 40),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

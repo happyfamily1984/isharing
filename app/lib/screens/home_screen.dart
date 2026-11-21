@@ -30,6 +30,7 @@ import 'places_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 import 'together_screen.dart';
+import '../services/avatars.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -538,14 +539,16 @@ const _sheetInitial = 0.2;
 /// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
 const memberZoom = 15.0;
 
-/// 앱 로고 (지도 핀). 앱 아이콘 그림이 오면 이미지로 바꾼다.
+/// 앱 로고 (앱 아이콘 그림)
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 40});
   final double size;
 
   @override
-  Widget build(BuildContext context) =>
-      Icon(Icons.location_on, size: size, color: AppColors.primary);
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.24),
+        child: Image.asset('assets/images/app_icon.png', width: size, height: size),
+      );
 }
 
 /// 홈 위쪽 상태 카드: "우리 가족이 모두 함께 있어요!" + 마지막 업데이트 시각.
@@ -1084,15 +1087,10 @@ class MemberAvatar extends StatelessWidget {
             border: Border.all(color: ring, width: radius > 24 ? 4 : 3),
           ),
           alignment: Alignment.center,
-          child: Text(
-            member.badge,
-            style: TextStyle(
-              fontSize: radius * (emoji ? 1.05 : 0.8),
-              height: 1.15,
-              color: emoji ? null : Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: emoji
+              ? ClipOval(child: AvatarGlyph(member.badge, size: radius * 1.7))
+              : Text(member.badge,
+                  style: TextStyle(fontSize: radius * 0.8, color: Colors.white, fontWeight: FontWeight.w700)),
         ),
         // 오른쪽 아래 온라인 점
         Positioned(

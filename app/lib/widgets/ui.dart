@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/avatars.dart';
 
 /// 디자인 시안의 색. 밝은 민트 배경 위에 흰 카드, 청록색 강조.
 class AppColors {
@@ -273,7 +274,7 @@ class EmojiBubble extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(shape: BoxShape.circle, color: background ?? AppColors.mint),
       alignment: Alignment.center,
-      child: Text(emoji, style: TextStyle(fontSize: size * 0.52, height: 1.15)),
+      child: AvatarGlyph(emoji, size: size * 0.82),
     );
   }
 }

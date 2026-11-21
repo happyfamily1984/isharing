@@ -53,77 +53,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     return PopScope(
       canPop: !widget.required,
       child: Scaffold(
-        appBar: PillAppBar(
-          title: '프로필',
-          // 처음 정할 때는 뒤로 갈 수 없다
-          leading: widget.required ? const SizedBox(width: 12) : null,
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          titleSpacing: 8,
+          title: Row(
+            children: [
+              // 처음 정할 때는 닫을 수 없다
+              if (!widget.required)
+                IconButton(
+                  tooltip: '닫기',
+                  icon: const Icon(Icons.close, size: 32),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                )
+              else
+                const SizedBox(width: 16),
+              const SizedBox(width: 12),
+              const Text('프로필', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+            ],
+          ),
         ),
         body: SafeArea(
           child: Column(
             children: [
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                   children: [
                     Center(
-                      child: CircleAvatar(
-                        radius: 44,
-                        backgroundColor: scheme.primaryContainer,
-                        child: Text(_avatar, style: const TextStyle(fontSize: 48)),
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFA9EFE2)),
+                        alignment: Alignment.center,
+                        child: ClipOval(child: AvatarGlyph(_avatar, size: 158)),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _name,
                       builder: (context, value, _) => TextField(
                         controller: _name,
                         maxLength: 20,
                         textInputAction: TextInputAction.done,
+                        style: const TextStyle(fontSize: 20),
                         decoration: InputDecoration(
                           labelText: '이름 (예: 엄마, 아빠, 민준)',
-                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                           suffixIcon: value.text.isEmpty
                               ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: _name.clear,
-                                ),
+                              : IconButton(icon: const Icon(Icons.close), onPressed: _name.clear),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text('지도에 보일 캐릭터', style: theme.textTheme.titleSmall),
                     const SizedBox(height: 12),
+                    const Text('지도에 보일 캐릭터',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                    const SizedBox(height: 14),
                     GridView.count(
                       crossAxisCount: 6,
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
                       children: [
-                        for (final emoji in avatarChoices)
+                        for (final id in avatarChoices)
                           InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () => setState(() => _avatar = emoji),
+                            borderRadius: BorderRadius.circular(18),
+                            onTap: () => setState(() => _avatar = id),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: emoji == _avatar
-                                    ? scheme.primaryContainer
-                                    : scheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(18),
+                                color: id == _avatar ? AppColors.mint : const Color(0xFFE8ECEB),
                                 border: Border.all(
-                                  color: emoji == _avatar ? scheme.primary : Colors.transparent,
-                                  width: 2,
+                                  color: id == _avatar ? AppColors.primaryDark : Colors.transparent,
+                                  width: 2.5,
                                 ),
                               ),
-                              alignment: Alignment.center,
-                              child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                              padding: const EdgeInsets.all(4),
+                              child: LayoutBuilder(
+                                builder: (context, box) => AvatarGlyph(id, size: box.maxWidth),
+                              ),
                             ),
                           ),
                       ],
@@ -137,7 +152,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   valueListenable: _name,
                   builder: (context, value, _) => FilledButton(
                     onPressed: value.text.trim().isEmpty ? null : _save,
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(58),
+                      backgroundColor: AppColors.primaryDark,
+                      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 19, fontWeight: FontWeight.w700),
+                    ),
                     child: Text(widget.required ? '시작하기' : '저장'),
                   ),
                 ),
