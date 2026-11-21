@@ -147,7 +147,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         actions: [
           IconButton(
             tooltip: '날짜 선택',
-            icon: const Icon(Icons.calendar_month, size: 30),
+            icon: const Icon(Icons.calendar_month, size: 23),
             onPressed: _pickDay,
           ),
         ],
@@ -161,16 +161,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final me = widget.members.me;
               final all = [?me, ...widget.members.others];
               return SizedBox(
-                height: 68,
+                height: 50,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   children: [
                     for (final m in all)
                       _PillChoice(
                         selected: m.uid == _uid,
                         onTap: () => _selectMember(m.uid),
-                        leading: EmojiBubble(m.badge, size: 38),
+                        leading: EmojiBubble(m.badge, size: 28),
                         label: m.uid == Backend.uid ? '나' : m.displayName,
                       ),
                   ],
@@ -180,17 +180,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           // 날짜 선택
           SizedBox(
-            height: 64,
+            height: 46,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               children: [
                 for (final d in days)
                   _PillChoice(
                     selected: d == _day,
                     onTap: () => _selectDay(d),
                     label: _dayLabel(d),
-                    minWidth: 96,
+                    minWidth: 64,
                   ),
               ],
             ),
@@ -199,7 +199,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: LayoutBuilder(
               builder: (context, box) {
                 // 아래 요약 카드가 지도 아래쪽을 덮으므로 맞추기는 보이는 부분 기준으로 한다.
-                final sheet = box.maxHeight * 0.42;
+                final sheet = box.maxHeight * 0.36;
                 _map
                   ..bottomCover = sheet - 28
                   ..viewHeight = box.maxHeight;
@@ -260,12 +260,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     if (_loading) const LinearProgressIndicator(),
                     // 지도 오른쪽 버튼: 경로 전체 보기 · 위성 지도
                     Positioned(
-                      right: 16,
+                      right: 12,
                       bottom: sheet + 4,
                       child: Column(
                         children: [
                           _MapRoundButton(icon: Icons.my_location, tooltip: '경로 전체 보기', onTap: _fit),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           _MapRoundButton(
                             icon: Icons.layers_outlined,
                             tooltip: _satellite ? '기본 지도' : '위성 지도',
@@ -302,33 +302,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
       );
     } else {
       body = ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
         children: [
           InkWell(
             borderRadius: BorderRadius.circular(20),
             onTap: () => _select(null),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
               child: Row(
                 children: [
-                  IconBubble(Icons.route, size: 60,
+                  IconBubble(Icons.route, size: 42,
                       background: selected == null ? AppColors.mint : AppColors.mintSoft),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('하루 전체 · ${_km(dayDistanceMeters(_segments))} 이동',
-                            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.ink)),
-                        const SizedBox(height: 4),
+                            style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                        const SizedBox(height: 2),
                         Row(
                           children: [
-                            const Icon(Icons.schedule, size: 17, color: AppColors.sub),
+                            const Icon(Icons.schedule, size: 13, color: AppColors.sub),
                             const SizedBox(width: 4),
                             Text(
                               '${time.format(_points.first.time)} ~ ${time.format(_points.last.time)}'
                               ' · 이동 ${_segments.where((s) => !s.isStay).length}번',
-                              style: const TextStyle(fontSize: 15, color: AppColors.sub),
+                              style: const TextStyle(fontSize: 12.5, color: AppColors.sub),
                             ),
                           ],
                         ),
@@ -341,20 +341,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           for (final seg in _segments)
             SoftCard(
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 8),
               padding: EdgeInsets.zero,
-              radius: 22,
+              radius: 18,
               border: identical(seg, selected) ? Border.all(color: AppColors.primary, width: 2) : null,
               onTap: () => _select(seg),
               child: FeatureRow(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 leading: IconBubble(seg.isStay ? Icons.location_on : Icons.directions_walk,
-                    size: 52, color: AppColors.primaryDark, background: AppColors.mint),
+                    size: 38, color: AppColors.primaryDark, background: AppColors.mint),
                 title: '${time.format(seg.start)} ~ ${time.format(seg.end)}',
                 subtitle: seg.isStay
                     ? '머묾 · ${_duration(seg.duration)}'
                     : '이동 · ${_km(seg.distanceMeters)} · ${_duration(seg.duration)}',
-                trailing: const Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+                trailing: const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
               ),
             ),
         ],
@@ -369,8 +369,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Column(
         children: [
           Container(
-            margin: const EdgeInsets.only(top: 10, bottom: 12),
-            width: 44,
+            margin: const EdgeInsets.only(top: 8, bottom: 8),
+            width: 40,
             height: 5,
             decoration: BoxDecoration(color: const Color(0xFFD2DBD9), borderRadius: BorderRadius.circular(3)),
           ),
@@ -400,7 +400,7 @@ class _PillChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.only(right: 8),
       child: Material(
         color: selected ? AppColors.mint : Colors.white,
         shape: StadiumBorder(
@@ -414,15 +414,15 @@ class _PillChoice extends StatelessWidget {
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: minWidth),
             child: Padding(
-              padding: EdgeInsets.fromLTRB(leading == null ? 20 : 8, 0, 20, 0),
+              padding: EdgeInsets.fromLTRB(leading == null ? 14 : 5, 0, 14, 0),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (leading != null) ...[leading!, const SizedBox(width: 10)],
+                  if (leading != null) ...[leading!, const SizedBox(width: 6)],
                   Text(label,
                       style: TextStyle(
-                          fontSize: 17,
+                          fontSize: 14,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                           color: AppColors.ink)),
                 ],
@@ -455,7 +455,7 @@ class _MapRoundButton extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: SizedBox(width: 56, height: 56, child: Icon(icon, size: 28, color: AppColors.ink)),
+          child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 21, color: AppColors.ink)),
         ),
       ),
     );

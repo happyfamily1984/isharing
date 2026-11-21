@@ -6,8 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
-import 'package:intl/intl.dart';
-
 import '../config.dart';
 import '../models/member.dart';
 import '../widgets/family_map.dart';
@@ -289,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               FeatureRow(
-                leading: const IconBubble(Icons.groups, size: 48),
+                leading: const IconBubble(Icons.groups, size: 38),
                 title: '그룹',
                 subtitle: '초대코드 · 가입 승인 · 멤버 관리',
                 trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
@@ -299,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 },
               ),
               FeatureRow(
-                leading: const IconBubble(Icons.place, size: 48),
+                leading: const IconBubble(Icons.place, size: 38),
                 title: '장소 (집 · 회사 · 학교)',
                 subtitle: '가족이 도착하면 서로에게 알림이 와요',
                 trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
@@ -316,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 },
               ),
               FeatureRow(
-                leading: const IconBubble(Icons.settings, size: 48),
+                leading: const IconBubble(Icons.settings, size: 38),
                 title: '설정',
                 subtitle: '위치 공유 · 알림 · 프로필',
                 trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
@@ -358,7 +356,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (context, _) {
           final all = [if (_members.me != null) _members.me!, ..._members.others];
           final located = all.where((m) => m.position != null && m.sharing).toList();
-          final status = FamilyStatus.of(all);
           return Stack(
             children: [
               FamilyMap(
@@ -420,28 +417,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       PillBar(
                         leading: const Padding(
                           padding: EdgeInsets.only(left: 6),
-                          child: AppLogo(size: 40),
+                          child: AppLogo(size: 32),
                         ),
                         title: AppConfig.appName,
                         actions: [
                           IconButton(
                             tooltip: '이동경로',
-                            icon: const Icon(Icons.route, size: 28),
+                            icon: const Icon(Icons.route, size: 23),
                             onPressed: () => _openHistory(Backend.uid),
                           ),
                           IconButton(
                             tooltip: '그룹',
-                            icon: const Icon(Icons.groups, size: 28),
+                            icon: const Icon(Icons.groups, size: 23),
                             onPressed: _openGroups,
                           ),
                           IconButton(
                             tooltip: '설정',
-                            icon: const Icon(Icons.settings, size: 28),
+                            icon: const Icon(Icons.settings, size: 23),
                             onPressed: _openSettings,
                           ),
                         ],
                       ),
-                      if (status != null && _groups.isNotEmpty) HomeStatusCard(status: status),
                       if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
                       if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
                         _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
@@ -460,15 +456,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ..bottomCover = cover
                       ..viewHeight = box.maxHeight;
                     // 가족 목록을 끌어 올려도 아이콘 줄이 그 바로 위에 보이게 한다 (공간이 좁으면 스크롤)
-                    final space = box.maxHeight - cover - 24 - 240;
+                    final space = box.maxHeight - cover - 24 - 120;
                     if (space < 64) return const SizedBox.shrink();
                     return Align(
                       alignment: Alignment.bottomRight,
                       child: Padding(
-                        padding: EdgeInsets.only(right: 14, bottom: cover + 14),
+                        padding: EdgeInsets.only(right: 10, bottom: cover + 10),
                         child: _MemberJumpBar(
                           members: located,
-                          maxHeight: math.min(340, space),
+                          maxHeight: math.min(280, space),
                           onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
                           onAll: () => _map.fit(located.map((m) => m.position!).toList()),
                         ),
@@ -498,8 +494,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         Center(
                           child: Container(
-                            margin: const EdgeInsets.only(top: 10, bottom: 4),
-                            width: 44,
+                            margin: const EdgeInsets.only(top: 8, bottom: 2),
+                            width: 40,
                             height: 5,
                             decoration: BoxDecoration(
                               color: const Color(0xFFD2DBD9),
@@ -508,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         for (final (i, m) in all.indexed) ...[
-                          if (i > 0) const InsetDivider(indent: 104),
+                          if (i > 0) const InsetDivider(indent: 72),
                           MemberCard(
                             member: m,
                             isMe: m.uid == Backend.uid,
@@ -534,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 }
 
 /// 아래 가족 목록의 처음 높이 (화면 비율): 내 카드 하나가 보이는 정도
-const _sheetInitial = 0.2;
+const _sheetInitial = 0.13;
 
 /// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
 const memberZoom = 15.0;
@@ -549,69 +545,6 @@ class AppLogo extends StatelessWidget {
         borderRadius: BorderRadius.circular(size * 0.24),
         child: Image.asset('assets/images/app_icon.png', width: size, height: size),
       );
-}
-
-/// 홈 위쪽 상태 카드: "우리 가족이 모두 함께 있어요!" + 마지막 업데이트 시각.
-class HomeStatusCard extends StatelessWidget {
-  const HomeStatusCard({super.key, required this.status});
-  final FamilyStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftCard(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-      radius: 26,
-      child: Row(
-        children: [
-          const Text('🏡', style: TextStyle(fontSize: 42, height: 1.1)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.circle,
-                        size: 10, color: status.anyOnline ? AppColors.online : AppColors.offline),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      // 좁은 폰에서도 한 줄에 다 보이도록 글자를 줄인다
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          status.headline,
-                          maxLines: 1,
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.ink),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(status.subtitle, style: const TextStyle(fontSize: 14, color: AppColors.sub)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(20)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.schedule, size: 16, color: AppColors.ink),
-                const SizedBox(width: 4),
-                Text(DateFormat('a h:mm', 'ko').format(status.latest),
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.ink)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// 아래 가족 목록의 한 사람 카드.
@@ -637,11 +570,11 @@ class MemberCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+        padding: const EdgeInsets.fromLTRB(16, 6, 8, 8),
         child: Row(
           children: [
-            MemberAvatar(member: m, radius: 36),
-            const SizedBox(width: 16),
+            MemberAvatar(member: m, radius: 23),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,7 +585,7 @@ class MemberCard extends StatelessWidget {
                         child: Text(
                           isMe ? '${m.displayName} (나)' : m.displayName,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.ink),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.ink),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -660,15 +593,15 @@ class MemberCard extends StatelessWidget {
                     ],
                   ),
                   if (placeLabel != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.location_on, size: 18, color: AppColors.ink),
-                        const SizedBox(width: 4),
+                        const Icon(Icons.location_on, size: 14, color: AppColors.ink),
+                        const SizedBox(width: 3),
                         Flexible(
                           child: Text(placeLabel!,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink)),
                         ),
                       ],
                     ),
@@ -676,25 +609,25 @@ class MemberCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.schedule, size: 15, color: AppColors.sub),
-                      const SizedBox(width: 4),
+                      const Icon(Icons.schedule, size: 12, color: AppColors.sub),
+                      const SizedBox(width: 3),
                       Flexible(
                         child: Text(m.freshnessText,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14.5, color: AppColors.sub)),
+                            style: const TextStyle(fontSize: 12, color: AppColors.sub)),
                       ),
                     ],
                   ),
                   if (together != null && together!.inMinutes >= 1) ...[
                     const SizedBox(height: 2),
                     Text('🤝 오늘 함께 ${formatDuration(together!)}',
-                        style: const TextStyle(fontSize: 14, color: AppColors.sub)),
+                        style: const TextStyle(fontSize: 12, color: AppColors.sub)),
                   ],
                 ],
               ),
             ),
             BatteryLabel(member: m),
-            const Icon(Icons.chevron_right, size: 30, color: AppColors.ink),
+            const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
           ],
         ),
       ),
@@ -722,13 +655,13 @@ class AppBottomNav extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, -2))],
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -2))],
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 72,
+          height: 54,
           child: Row(
             children: [
               const _NavItem(icon: Icons.location_on, label: '위치', selected: true),
@@ -765,15 +698,15 @@ class _NavItem extends StatelessWidget {
               isLabelVisible: badge > 0,
               backgroundColor: AppColors.danger,
               label: Text(badge > 9 ? '9+' : '$badge'),
-              child: Icon(icon, size: 30, color: color),
+              child: Icon(icon, size: 23, color: color),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(label,
-                style: TextStyle(fontSize: 13.5, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
-            const SizedBox(height: 4),
+                style: TextStyle(fontSize: 11.5, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+            const SizedBox(height: 3),
             Container(
-              width: 40,
-              height: 3,
+              width: 28,
+              height: 2.5,
               decoration: BoxDecoration(
                 color: selected ? AppColors.primary : Colors.transparent,
                 borderRadius: BorderRadius.circular(2),
@@ -806,10 +739,10 @@ class _MemberJumpBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(34),
+        borderRadius: BorderRadius.circular(26),
         boxShadow: AppColors.shadow,
       ),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: ConstrainedBox(
         // 가족이 많으면 스크롤
         constraints: BoxConstraints(maxHeight: maxHeight),
@@ -822,18 +755,18 @@ class _MemberJumpBar extends StatelessWidget {
                   message: '모두 보기',
                   child: IconButton(
                     onPressed: onAll,
-                    icon: const Icon(Icons.groups, size: 30, color: AppColors.ink),
+                    icon: const Icon(Icons.groups, size: 22, color: AppColors.ink),
                   ),
                 ),
               for (final m in members)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 3),
                   child: Tooltip(
                     message: m.uid == Backend.uid ? '나' : m.displayName,
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       onTap: () => onMember(m),
-                      child: MemberAvatar(member: m, radius: 26),
+                      child: MemberAvatar(member: m, radius: 20),
                     ),
                   ),
                 ),
@@ -867,13 +800,13 @@ class _NoticeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftCard(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
       child: Row(
         children: [
-          IconBubble(icon, size: 44, color: color, background: color.withValues(alpha: 0.1)),
+          IconBubble(icon, size: 34, color: color, background: color.withValues(alpha: 0.1)),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 14.5, color: AppColors.ink, height: 1.35))),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: AppColors.ink, height: 1.35))),
           Column(mainAxisSize: MainAxisSize.min, children: actions),
         ],
       ),
@@ -946,11 +879,11 @@ class _EmptyGroupsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftCard(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       padding: EdgeInsets.zero,
       onTap: onTap,
       child: const FeatureRow(
-        leading: IconBubble(Icons.group_add, size: 48),
+        leading: IconBubble(Icons.group_add, size: 38),
         title: '아직 그룹이 없어요',
         subtitle: '그룹을 만들거나 초대코드로 참여해 위치를 공유하세요.',
         trailing: Icon(Icons.chevron_right, color: AppColors.sub),
@@ -1013,7 +946,7 @@ class _MemberSheetState extends State<_MemberSheet> {
                 padding: EdgeInsets.zero,
                 onTap: widget.onTogether,
                 child: FeatureRow(
-                  leading: const EmojiBubble('🤝', size: 48),
+                  leading: const EmojiBubble('🤝', size: 38),
                   title: '오늘 함께한 시간 ${formatDuration(widget.together?.on(DateTime.now()) ?? Duration.zero)}',
                   subtitle:
                       '최근 7일 ${formatDuration(widget.together?.lastDays(7) ?? Duration.zero)} · 언제 어디서 함께했는지 보기',
@@ -1128,8 +1061,8 @@ class BatteryLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 18, color: low ? AppColors.danger : AppColors.sub),
-        Text('$level%', style: TextStyle(fontSize: 14, color: low ? AppColors.danger : AppColors.sub)),
+        Icon(icon, size: 14, color: low ? AppColors.danger : AppColors.sub),
+        Text('$level%', style: TextStyle(fontSize: 12, color: low ? AppColors.danger : AppColors.sub)),
       ],
     );
   }

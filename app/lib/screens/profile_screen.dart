@@ -65,13 +65,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (!widget.required)
                 IconButton(
                   tooltip: '닫기',
-                  icon: const Icon(Icons.close, size: 32),
+                  icon: const Icon(Icons.close, size: 26),
                   onPressed: () => Navigator.of(context).maybePop(),
                 )
               else
                 const SizedBox(width: 16),
               const SizedBox(width: 12),
-              const Text('프로필', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+              const Text('프로필', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ],
           ),
         ),
@@ -84,21 +84,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Center(
                       child: Container(
-                        width: 180,
-                        height: 180,
+                        width: 132,
+                        height: 132,
                         decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFA9EFE2)),
                         alignment: Alignment.center,
-                        child: ClipOval(child: AvatarGlyph(_avatar, size: 158)),
+                        child: ClipOval(child: AvatarGlyph(_avatar, size: 116)),
                       ),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 20),
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _name,
                       builder: (context, value, _) => TextField(
                         controller: _name,
                         maxLength: 20,
                         textInputAction: TextInputAction.done,
-                        style: const TextStyle(fontSize: 20),
+                        style: const TextStyle(fontSize: 16.5),
                         decoration: InputDecoration(
                           labelText: '이름 (예: 엄마, 아빠, 민준)',
                           filled: true,
@@ -112,7 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text('지도에 보일 캐릭터',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.ink)),
                     const SizedBox(height: 14),
                     GridView.count(
                       crossAxisCount: 6,
@@ -153,9 +153,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   builder: (context, value, _) => FilledButton(
                     onPressed: value.text.trim().isEmpty ? null : _save,
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(58),
+                      minimumSize: const Size.fromHeight(50),
                       backgroundColor: AppColors.primaryDark,
-                      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 19, fontWeight: FontWeight.w700),
+                      textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                     child: Text(widget.required ? '시작하기' : '저장'),
                   ),

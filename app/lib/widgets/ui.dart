@@ -43,7 +43,7 @@ ThemeData buildAppTheme() {
       surfaceTintColor: Colors.transparent,
       foregroundColor: AppColors.ink,
       titleTextStyle: TextStyle(
-          fontFamily: 'Pretendard', fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.ink),
+          fontFamily: 'Pretendard', fontSize: 19, fontWeight: FontWeight.w700, color: AppColors.ink),
     ),
     cardTheme: CardThemeData(
       color: Colors.white,
@@ -56,17 +56,17 @@ ThemeData buildAppTheme() {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         shape: stadium,
-        minimumSize: const Size(64, 52),
-        textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w700),
+        minimumSize: const Size(64, 46),
+        textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         shape: stadium,
-        minimumSize: const Size(64, 52),
+        minimumSize: const Size(64, 46),
         foregroundColor: AppColors.primaryDark,
         side: const BorderSide(color: AppColors.primary, width: 1.5),
-        textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
     switchTheme: SwitchThemeData(
@@ -86,14 +86,14 @@ ThemeData buildAppTheme() {
         iconSize: const WidgetStatePropertyAll(16),
         visualDensity: VisualDensity.compact,
         textStyle: const WidgetStatePropertyAll(
-            TextStyle(fontFamily: 'Pretendard', fontSize: 15, fontWeight: FontWeight.w600)),
+            TextStyle(fontFamily: 'Pretendard', fontSize: 14, fontWeight: FontWeight.w600)),
       ),
     ),
     chipTheme: ChipThemeData(
       shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
       backgroundColor: Colors.white,
       selectedColor: AppColors.mint,
-      labelStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 15, color: AppColors.ink),
+      labelStyle: const TextStyle(fontFamily: 'Pretendard', fontSize: 14, color: AppColors.ink),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     ),
     bottomSheetTheme: const BottomSheetThemeData(
@@ -132,7 +132,7 @@ class PillAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget> actions;
 
   @override
-  Size get preferredSize => const Size.fromHeight(84);
+  Size get preferredSize => const Size.fromHeight(66);
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +144,7 @@ class PillAppBar extends StatelessWidget implements PreferredSizeWidget {
             (canPop
                 ? IconButton(
                     tooltip: '뒤로',
-                    icon: const Icon(Icons.arrow_back, size: 28),
+                    icon: const Icon(Icons.arrow_back, size: 24),
                     onPressed: () => Navigator.of(context).maybePop(),
                   )
                 : null),
@@ -166,12 +166,12 @@ class PillBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 64,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 50,
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(25),
         boxShadow: AppColors.shadow,
       ),
       child: Row(
@@ -182,7 +182,7 @@ class PillBar extends StatelessWidget {
             child: Text(
               title,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.ink),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.ink),
             ),
           ),
           ...actions,
@@ -197,12 +197,12 @@ class SoftCard extends StatelessWidget {
   const SoftCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(20),
-    this.margin = const EdgeInsets.only(bottom: 16),
+    this.padding = const EdgeInsets.all(16),
+    this.margin = const EdgeInsets.only(bottom: 12),
     this.onTap,
     this.color = Colors.white,
     this.border,
-    this.radius = 24,
+    this.radius = 20,
   });
 
   final Widget child;
@@ -294,11 +294,11 @@ class SectionLabel extends StatelessWidget {
         children: [
           Container(
             width: 4,
-            height: 20,
+            height: 16,
             decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(width: 10),
-          Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.ink)),
+          Text(text, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: AppColors.ink)),
         ],
       ),
     );
@@ -327,7 +327,7 @@ class TagChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chip = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(20)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -336,10 +336,10 @@ class TagChip extends StatelessWidget {
             Icon(Icons.circle, size: 8, color: color),
             const SizedBox(width: 5),
           ],
-          Text(label, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600)),
           if (trailing != null) ...[
             const SizedBox(width: 2),
-            Icon(trailing, size: 18, color: color),
+            Icon(trailing, size: 15, color: color),
           ],
         ],
       ),
@@ -358,7 +358,7 @@ class FeatureRow extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.onTap,
-    this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     this.titleColor = AppColors.ink,
   });
 
@@ -379,17 +379,17 @@ class FeatureRow extends StatelessWidget {
         child: Row(
           children: [
             leading,
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(keepWords(title),
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: titleColor)),
+                      style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: titleColor)),
                   if (subtitle != null && subtitle!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(keepWords(subtitle!),
-                        style: const TextStyle(fontSize: 14.5, color: AppColors.sub, height: 1.35)),
+                        style: const TextStyle(fontSize: 13, color: AppColors.sub, height: 1.35)),
                   ],
                 ],
               ),
@@ -439,9 +439,9 @@ class MintBackground extends StatelessWidget {
 
 /// 카드 안 줄 사이 구분선 (왼쪽은 아이콘 너비만큼 들여쓴다).
 class InsetDivider extends StatelessWidget {
-  const InsetDivider({super.key, this.indent = 20});
+  const InsetDivider({super.key, this.indent = 16});
   final double indent;
 
   @override
-  Widget build(BuildContext context) => Divider(indent: indent, endIndent: 20);
+  Widget build(BuildContext context) => Divider(indent: indent, endIndent: 16);
 }

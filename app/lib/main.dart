@@ -34,6 +34,9 @@ class FamilyLocatorApp extends StatelessWidget {
       // 디자인 시안은 밝은 화면 하나라 다크 모드에서도 같은 화면을 쓴다.
       theme: buildAppTheme(),
       themeMode: ThemeMode.light,
+      // 폰의 글자 크기 설정이 커도 메뉴가 지도를 가리지 않도록 확대를 제한한다.
+      builder: (context, child) =>
+          MediaQuery.withClampedTextScaling(maxScaleFactor: 1.1, child: child!),
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snap) {

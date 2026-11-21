@@ -70,16 +70,16 @@ class _AlertsScreenState extends State<AlertsScreen> {
               lastDay = day;
             }
             children.add(SoftCard(
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 8),
               padding: EdgeInsets.zero,
               child: FeatureRow(
-                leading: IconBubble(_icon(a.type), size: 48),
+                leading: IconBubble(_icon(a.type), size: 38),
                 title: a.body.isEmpty ? a.title : a.body,
                 subtitle: '${a.title} · ${DateFormat('a h:mm', 'ko').format(t)}',
               ),
             ));
           }
-          return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: children);
+          return ListView(padding: const EdgeInsets.fromLTRB(12, 6, 12, 24), children: children);
         },
       ),
     );
