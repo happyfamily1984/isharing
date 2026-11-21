@@ -36,6 +36,8 @@ jobs:
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          # 새 Flutter 버전이 나와도 빌드가 갑자기 깨지지 않도록 확인한 버전으로 고정한다.
+          flutter-version: 3.50.1
           cache: true
 
       - name: Write google-services.json

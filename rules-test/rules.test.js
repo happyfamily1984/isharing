@@ -110,3 +110,12 @@ test("check-ins are write-only for the owner and validated", async () => {
   await assertFails(setDoc(doc(as("alice"), "checkins/alice"), { lat: 1, lng: 2, viewers: ["mallory"] }));
   await assertFails(getDoc(doc(as("alice"), "checkins/alice")));
 });
+
+test("alerts are readable only by their owner and never client-written", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users/alice/alerts/a1"), { title: "t", body: "b", type: "place" });
+  });
+  await assertSucceeds(getDoc(doc(as("alice"), "users/alice/alerts/a1")));
+  await assertFails(getDoc(doc(as("bob"), "users/alice/alerts/a1")));
+  await assertFails(setDoc(doc(as("alice"), "users/alice/alerts/a2"), { title: "x" }));
+});

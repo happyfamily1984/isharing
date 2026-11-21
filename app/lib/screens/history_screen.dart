@@ -6,6 +6,7 @@ import '../services/backend.dart';
 import '../services/group_service.dart';
 import '../services/trips.dart';
 import '../widgets/family_map.dart';
+import '../widgets/ui.dart';
 
 /// 멤버별 · 날짜별 · 시간대별 이동경로.
 class HistoryScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   /// 목록에서 고른 구간. null 이면 하루 전체.
   RouteSegment? _selected;
   bool _loading = true;
+  bool _satellite = false;
   String? _error;
   int _request = 0;
 
@@ -136,17 +138,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // 하루 전체를 볼 때 처음·끝이 머문 곳이면 그 곳 표시(시간 포함)가 출발·마지막을 대신한다
     final startsAtStay = selected == null && _segments.isNotEmpty && _segments.first.isStay;
     final endsAtStay = selected == null && _segments.isNotEmpty && _segments.last.isStay;
-    final scheme = Theme.of(context).colorScheme;
     final time = DateFormat('HH:mm');
     final days = [for (var i = 0; i < _days; i++) _today().subtract(Duration(days: i))];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('이동경로'),
+      appBar: PillAppBar(
+        title: '이동경로',
         actions: [
           IconButton(
             tooltip: '날짜 선택',
-            icon: const Icon(Icons.calendar_month),
+            icon: const Icon(Icons.calendar_month, size: 30),
             onPressed: _pickDay,
           ),
         ],
@@ -160,22 +161,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final me = widget.members.me;
               final all = [?me, ...widget.members.others];
               return SizedBox(
-                height: 52,
+                height: 68,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   children: [
                     for (final m in all)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          avatar: CircleAvatar(
-                            child: Text(m.badge),
-                          ),
-                          label: Text(m.uid == Backend.uid ? '나' : m.displayName),
-                          selected: m.uid == _uid,
-                          onSelected: (_) => _selectMember(m.uid),
-                        ),
+                      _PillChoice(
+                        selected: m.uid == _uid,
+                        onTap: () => _selectMember(m.uid),
+                        leading: EmojiBubble(m.badge, size: 38),
+                        label: m.uid == Backend.uid ? '나' : m.displayName,
                       ),
                   ],
                 ),
@@ -184,114 +180,283 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           // 날짜 선택
           SizedBox(
-            height: 44,
+            height: 64,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               children: [
                 for (final d in days)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(_dayLabel(d)),
-                      selected: d == _day,
-                      showCheckmark: false,
-                      onSelected: (_) => _selectDay(d),
-                    ),
+                  _PillChoice(
+                    selected: d == _day,
+                    onTap: () => _selectDay(d),
+                    label: _dayLabel(d),
+                    minWidth: 96,
                   ),
               ],
             ),
           ),
           Expanded(
-            flex: 3,
-            child: Stack(
-              children: [
-                FamilyMap(
-                  controller: _map,
-                  initialZoom: 13,
-                  onReady: _fit,
-                  lines: [
-                    // 구간을 골랐으면 하루 전체 경로는 흐리게, 고른 구간은 진하게
-                    MapLine(
-                      id: 'day',
-                      points: dayLine,
-                      color: selected == null ? scheme.primary : scheme.outlineVariant,
-                      width: selected == null ? 6 : 4,
-                    ),
-                    if (selected != null && !selected.isStay)
-                      MapLine(id: 'selected', points: line, color: scheme.primary, width: 7),
-                  ],
-                  pins: [
-                    if (selected == null)
-                      for (final (i, seg) in _segments.where((s) => s.isStay).indexed)
-                        MapPin(
-                          id: 'stay$i',
-                          position: seg.center,
-                          label: '${time.format(seg.start)}~${time.format(seg.end)}',
-                          color: scheme.secondary,
-                        ),
-                    if (selected != null && selected.isStay)
-                      MapPin(
-                        id: 'stay',
-                        position: selected.center,
-                        label: '${time.format(selected.start)}~${time.format(selected.end)} 머묾',
-                        color: scheme.secondary,
-                      )
-                    else ...[
-                      if (line.isNotEmpty && !startsAtStay)
-                        MapPin(
-                          id: 'start',
-                          position: line.first,
-                          label: '출발 ${time.format(visible.first.time)}',
-                          color: scheme.tertiary,
-                        ),
-                      if (line.length > 1 && !endsAtStay)
-                        MapPin(
-                          id: 'end',
-                          position: line.last,
-                          label: '${selected == null ? '마지막' : '도착'} ${time.format(visible.last.time)}',
-                          color: scheme.error,
-                        ),
-                    ],
-                  ],
-                ),
-                if (_loading) const LinearProgressIndicator(),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: _error != null
-                ? Center(child: Text(_error!))
-                : _points.isEmpty
-                    ? Center(child: Text(_loading ? '불러오는 중…' : '이 날은 기록된 이동경로가 없어요'))
-                    : ListView(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        children: [
-                          ListTile(
-                            selected: selected == null,
-                            leading: const Icon(Icons.route),
-                            title: Text('하루 전체 · ${_km(dayDistanceMeters(_segments))} 이동'),
-                            subtitle: Text(
-                                '${time.format(_points.first.time)} ~ ${time.format(_points.last.time)}'
-                                ' · 이동 ${_segments.where((s) => !s.isStay).length}번'),
-                            onTap: () => _select(null),
+            child: LayoutBuilder(
+              builder: (context, box) {
+                // 아래 요약 카드가 지도 아래쪽을 덮으므로 맞추기는 보이는 부분 기준으로 한다.
+                final sheet = box.maxHeight * 0.42;
+                _map
+                  ..bottomCover = sheet - 28
+                  ..viewHeight = box.maxHeight;
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: FamilyMap(
+                        controller: _map,
+                        initialZoom: 13,
+                        satellite: _satellite,
+                        onReady: _fit,
+                        lines: [
+                          // 구간을 골랐으면 하루 전체 경로는 흐리게, 고른 구간은 진하게
+                          MapLine(
+                            id: 'day',
+                            points: dayLine,
+                            color: selected == null ? AppColors.primaryDark : const Color(0xFF9FB8B3),
+                            width: selected == null ? 7 : 5,
                           ),
-                          const Divider(height: 1),
-                          for (final seg in _segments)
-                            ListTile(
-                              selected: identical(seg, selected),
-                              leading: Icon(seg.isStay ? Icons.place : Icons.directions_walk),
-                              title: Text('${time.format(seg.start)} ~ ${time.format(seg.end)}'),
-                              subtitle: Text(seg.isStay
-                                  ? '머묾 · ${_duration(seg.duration)}'
-                                  : '이동 · ${_km(seg.distanceMeters)} · ${_duration(seg.duration)}'),
-                              onTap: () => _select(seg),
-                            ),
+                          if (selected != null && !selected.isStay)
+                            MapLine(id: 'selected', points: line, color: AppColors.primaryDark, width: 8),
+                        ],
+                        pins: [
+                          if (selected == null)
+                            for (final (i, seg) in _segments.where((s) => s.isStay).indexed)
+                              MapPin(
+                                id: 'stay$i',
+                                position: seg.center,
+                                label: '${time.format(seg.start)}~${time.format(seg.end)}',
+                                color: AppColors.primary,
+                              ),
+                          if (selected != null && selected.isStay)
+                            MapPin(
+                              id: 'stay',
+                              position: selected.center,
+                              label: '${time.format(selected.start)}~${time.format(selected.end)} 머묾',
+                              color: AppColors.primary,
+                            )
+                          else ...[
+                            if (line.isNotEmpty && !startsAtStay)
+                              MapPin(
+                                id: 'start',
+                                position: line.first,
+                                label: '출발 ${time.format(visible.first.time)}',
+                                color: AppColors.primary,
+                              ),
+                            if (line.length > 1 && !endsAtStay)
+                              MapPin(
+                                id: 'end',
+                                position: line.last,
+                                label: '${selected == null ? '마지막' : '도착'} ${time.format(visible.last.time)}',
+                                color: AppColors.me,
+                              ),
+                          ],
                         ],
                       ),
+                    ),
+                    if (_loading) const LinearProgressIndicator(),
+                    // 지도 오른쪽 버튼: 경로 전체 보기 · 위성 지도
+                    Positioned(
+                      right: 16,
+                      bottom: sheet + 4,
+                      child: Column(
+                        children: [
+                          _MapRoundButton(icon: Icons.my_location, tooltip: '경로 전체 보기', onTap: _fit),
+                          const SizedBox(height: 12),
+                          _MapRoundButton(
+                            icon: Icons.layers_outlined,
+                            tooltip: _satellite ? '기본 지도' : '위성 지도',
+                            onTap: () => setState(() => _satellite = !_satellite),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: sheet,
+                      child: _summarySheet(selected, time),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _summarySheet(RouteSegment? selected, DateFormat time) {
+    Widget body;
+    if (_error != null) {
+      body = Center(child: Text(_error!));
+    } else if (_points.isEmpty) {
+      body = Center(
+        child: Text(_loading ? '불러오는 중…' : '이 날은 기록된 이동경로가 없어요',
+            style: const TextStyle(color: AppColors.sub, fontSize: 16)),
+      );
+    } else {
+      body = ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _select(null),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
+              child: Row(
+                children: [
+                  IconBubble(Icons.route, size: 60,
+                      background: selected == null ? AppColors.mint : AppColors.mintSoft),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('하루 전체 · ${_km(dayDistanceMeters(_segments))} 이동',
+                            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule, size: 17, color: AppColors.sub),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${time.format(_points.first.time)} ~ ${time.format(_points.last.time)}'
+                              ' · 이동 ${_segments.where((s) => !s.isStay).length}번',
+                              style: const TextStyle(fontSize: 15, color: AppColors.sub),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          for (final seg in _segments)
+            SoftCard(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: EdgeInsets.zero,
+              radius: 22,
+              border: identical(seg, selected) ? Border.all(color: AppColors.primary, width: 2) : null,
+              onTap: () => _select(seg),
+              child: FeatureRow(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                leading: IconBubble(seg.isStay ? Icons.location_on : Icons.directions_walk,
+                    size: 52, color: AppColors.primaryDark, background: AppColors.mint),
+                title: '${time.format(seg.start)} ~ ${time.format(seg.end)}',
+                subtitle: seg.isStay
+                    ? '머묾 · ${_duration(seg.duration)}'
+                    : '이동 · ${_km(seg.distanceMeters)} · ${_duration(seg.duration)}',
+                trailing: const Icon(Icons.chevron_right, size: 28, color: AppColors.ink),
+              ),
+            ),
+        ],
+      );
+    }
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 20, offset: Offset(0, -4))],
+      ),
+      child: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 12),
+            width: 44,
+            height: 5,
+            decoration: BoxDecoration(color: const Color(0xFFD2DBD9), borderRadius: BorderRadius.circular(3)),
+          ),
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
+}
+
+/// 사람·날짜 고르기 버튼 (둥근 알약 모양, 고르면 민트색).
+class _PillChoice extends StatelessWidget {
+  const _PillChoice({
+    required this.selected,
+    required this.onTap,
+    required this.label,
+    this.leading,
+    this.minWidth = 0,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+  final String label;
+  final Widget? leading;
+  final double minWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Material(
+        color: selected ? AppColors.mint : Colors.white,
+        shape: StadiumBorder(
+          side: BorderSide(color: selected ? AppColors.primary : AppColors.line, width: selected ? 2 : 1),
+        ),
+        elevation: selected ? 0 : 1.5,
+        shadowColor: const Color(0x33000000),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: minWidth),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(leading == null ? 20 : 8, 0, 20, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (leading != null) ...[leading!, const SizedBox(width: 10)],
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          color: AppColors.ink)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 지도 위 동그란 흰 버튼.
+class _MapRoundButton extends StatelessWidget {
+  const _MapRoundButton({required this.icon, required this.tooltip, required this.onTap});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 3,
+        shadowColor: const Color(0x44000000),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(width: 56, height: 56, child: Icon(icon, size: 28, color: AppColors.ink)),
+        ),
       ),
     );
   }

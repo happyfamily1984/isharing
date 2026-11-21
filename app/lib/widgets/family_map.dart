@@ -122,6 +122,7 @@ class FamilyMap extends StatefulWidget {
     this.initialCenter = const LatLng(37.5665, 126.9780), // 서울시청
     this.initialZoom = 11,
     this.onReady,
+    this.satellite = false,
   });
 
   final FamilyMapController controller;
@@ -134,6 +135,9 @@ class FamilyMap extends StatefulWidget {
   final LatLng initialCenter;
   final double initialZoom;
   final VoidCallback? onReady;
+
+  /// 위성 사진 위에 길·이름을 겹친 지도로 보여줄지
+  final bool satellite;
 
   @override
   State<FamilyMap> createState() => _FamilyMapState();
@@ -275,6 +279,7 @@ class _FamilyMapState extends State<FamilyMap> {
         initialCameraPosition:
             NCameraPosition(target: _n(widget.initialCenter), zoom: widget.initialZoom),
         locale: const NLocale('ko', 'KR'),
+        mapType: widget.satellite ? NMapType.hybrid : NMapType.basic,
         scaleBarEnable: false,
         indoorEnable: false,
         consumeSymbolTapEvents: false,

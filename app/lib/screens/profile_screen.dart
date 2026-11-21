@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/avatars.dart';
+import '../widgets/ui.dart';
 
 /// 그룹 멤버에게 보일 이름과 이모지 캐릭터를 정하는 화면.
 /// 처음 가입했을 때는 저장할 때까지 닫을 수 없다([required]).
@@ -57,9 +58,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return PopScope(
       canPop: !widget.required,
       child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: !widget.required,
-          title: const Text('프로필'),
+        appBar: PillAppBar(
+          title: '프로필',
+          // 처음 정할 때는 뒤로 갈 수 없다
+          leading: widget.required ? const SizedBox(width: 12) : null,
         ),
         body: SafeArea(
           child: Column(

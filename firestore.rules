@@ -31,6 +31,12 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // 알림 탭 기록: 본인만 읽고, 서버만 쓴다
+      match /alerts/{alertId} {
+        allow read: if isMe(uid);
+        allow write: if false;
+      }
+
       match /rings/{ringId} {
         allow read: if isMe(uid);
         allow write: if false;

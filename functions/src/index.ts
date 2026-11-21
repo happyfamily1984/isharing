@@ -33,6 +33,7 @@ const PLAN_LIMITS: Record<Plan, { maxMembers: number; historyDays: number }> = {
   premium: { maxMembers: 20, historyDays: 30 },
 };
 const HISTORY_RETENTION_DAYS = PLAN_LIMITS.premium.historyDays; // 서버 최대 보관 기간
+const ALERT_RETENTION_DAYS = 30; // 알림 탭 기록 보관 기간
 
 function maxMembers(group: FirebaseFirestore.DocumentSnapshot): number {
   return PLAN_LIMITS[(group.get("plan") as Plan) ?? "free"]?.maxMembers ?? PLAN_LIMITS.free.maxMembers;
@@ -302,6 +303,7 @@ export const ringDevice = onCall(async (req) => {
       },
     },
   });
+  await saveAlert(targetUid, "휴대폰 찾기", `${fromName}님이 내 휴대폰 벨을 울렸어요`, "ring");
   await db.collection("users").doc(targetUid).collection("rings").add({
     from: uid,
     fromName,
@@ -363,6 +365,14 @@ export const cleanupOldLocations = onSchedule({ schedule: "every day 04:00", tim
     old.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
   }
+  const alertCutoff = Timestamp.fromMillis(Date.now() - ALERT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  for (;;) {
+    const old = await db.collectionGroup("alerts").where("createdAt", "<", alertCutoff).limit(400).get();
+    if (old.empty) break;
+    const batch = db.batch();
+    old.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
   const expired = await db.collection("inviteCodes").where("expiresAt", "<", Timestamp.now()).limit(400).get();
   const batch = db.batch();
   expired.docs.forEach((d) => batch.delete(d.ref));
@@ -386,12 +396,14 @@ const STALE_LOCATION_MS = 30 * 60 * 1000;
  * 알림창에서 저절로 사라진다 (data 전용 메시지). iOS 는 일반 알림으로 보낸다.
  */
 async function notify(
+  uid: string,
   user: UserData | undefined,
   title: string,
   body: string,
   type: string,
   autoDismissMs?: number,
 ) {
+  await saveAlert(uid, title, body, type);
   const token = user?.fcmToken as string | undefined;
   if (!token) return;
   const message: Message = autoDismissMs
@@ -411,6 +423,16 @@ async function notify(
   await getMessaging()
     .send(message)
     .catch((e) => console.warn("notify failed", e));
+}
+
+/** 앱의 "알림" 탭에 보여줄 기록 (users/{uid}/alerts). 보관 기간이 지나면 cleanup 이 지운다. */
+async function saveAlert(uid: string, title: string, body: string, type: string) {
+  await db
+    .collection("users")
+    .doc(uid)
+    .collection("alerts")
+    .add({ title, body, type, createdAt: FieldValue.serverTimestamp() })
+    .catch((e) => console.warn("save alert failed", e));
 }
 
 /** 거리 알림은 알림창에 이만큼만 떠 있다가 사라진다 */
@@ -497,7 +519,7 @@ async function checkPlaces(uid: string, me: UserData, loc: LatLng & { accuracy?:
       users
         .filter((u) => u.get("alertPlaces") !== false)
         .map((u) =>
-          notify(u.data(), `${a.emoji} ${a.name} 도착`, `${displayName(me)}님이 ${a.name}에 도착했어요`, "place"),
+          notify(u.id, u.data(), `${a.emoji} ${a.name} 도착`, `${displayName(me)}님이 ${a.name}에 도착했어요`, "place"),
         ),
     );
   }
@@ -566,8 +588,8 @@ async function updateWatch(
 
   const name = displayName(target);
   if (r.transition === "far") {
-    await notify(viewer, "거리 알림", `${name}님과 ${km}km 이상 멀어졌어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
+    await notify(viewerUid, viewer, "거리 알림", `${name}님과 ${km}km 이상 멀어졌어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
   } else if (r.transition === "near") {
-    await notify(viewer, "거리 알림", `${name}님이 ${km}km 이내에 있어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
+    await notify(viewerUid, viewer, "거리 알림", `${name}님이 ${km}km 이내에 있어요`, "distance", DISTANCE_ALERT_DISMISS_MS);
   }
 }

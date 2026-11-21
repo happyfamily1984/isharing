@@ -6,20 +6,27 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'package:intl/intl.dart';
+
 import '../config.dart';
 import '../models/member.dart';
 import '../widgets/family_map.dart';
+import '../services/alert_service.dart';
 import '../services/auth_service.dart';
 import '../services/backend.dart';
+import '../services/family_status.dart';
 import '../services/group_service.dart';
 import '../services/location_service.dart';
 import '../services/messaging_service.dart';
 import '../services/place_service.dart';
 import '../services/plan.dart';
 import '../services/together_service.dart';
+import '../widgets/ui.dart';
+import 'alerts_screen.dart';
 import 'disclosure_screen.dart';
 import 'profile_screen.dart';
 import 'groups_screen.dart';
+import 'places_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 import 'together_screen.dart';
@@ -46,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<Map<String, TogetherRecord>>? _togetherSub;
   Map<String, TogetherRecord> _together = const {};
   bool _centeredOnce = false;
+  late final Stream<List<AppAlert>> _alertsStream = AlertService.recent(limit: 20);
 
   /// 아래 가족 목록이 화면에서 차지하는 비율 (끌어 올리면 커진다)
   double _sheetExtent = _sheetInitial;
@@ -185,12 +193,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (go == true) await Geolocator.openAppSettings();
   }
 
-  String _listSubtitle(Member m) {
-    final today = _together[m.uid]?.on(DateTime.now()) ?? Duration.zero;
-    if (m.uid == Backend.uid || today.inMinutes < 1) return m.statusText;
-    return '${m.statusText}\n🤝 오늘 함께 ${formatDuration(today)}';
-  }
-
   void _onMembersChanged() {
     if (!_centeredOnce && _members.me?.position != null) {
       _centeredOnce = true;
@@ -245,8 +247,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) => _MemberSheet(
         member: m,
+        placeLabel: nearPlaceLabel(m.position, _places.all),
         isMe: m.uid == Backend.uid,
         together: _together[m.uid],
         onHistory: () {
@@ -263,36 +267,97 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _openGroups() => Navigator.of(context)
+      .push(MaterialPageRoute(builder: (_) => GroupsScreen(members: _members)));
+
+  void _openSettings() =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+
+  void _openAlerts() =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlertsScreen()));
+
+  /// 더보기: 그룹 · 장소 · 설정
+  void _openMore() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FeatureRow(
+                leading: const IconBubble(Icons.groups, size: 48),
+                title: '그룹',
+                subtitle: '초대코드 · 가입 승인 · 멤버 관리',
+                trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openGroups();
+                },
+              ),
+              FeatureRow(
+                leading: const IconBubble(Icons.place, size: 48),
+                title: '장소 (집 · 회사 · 학교)',
+                subtitle: '가족이 도착하면 서로에게 알림이 와요',
+                trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  // 그룹이 하나면 바로 그 그룹의 장소로, 여러 개면 그룹 화면에서 고른다.
+                  if (_groups.length == 1) {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PlacesScreen(group: _groups.first, myPosition: _members.me?.position),
+                    ));
+                  } else {
+                    _openGroups();
+                  }
+                },
+              ),
+              FeatureRow(
+                leading: const IconBubble(Icons.settings, size: 48),
+                title: '설정',
+                subtitle: '위치 공유 · 알림 · 프로필',
+                trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openSettings();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppConfig.appName),
-        actions: [
-          IconButton(
-            tooltip: '이동경로',
-            icon: const Icon(Icons.route),
-            onPressed: () => _openHistory(Backend.uid),
-          ),
-          IconButton(
-            tooltip: '그룹',
-            icon: const Icon(Icons.groups),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => GroupsScreen(members: _members))),
-          ),
-          IconButton(
-            tooltip: '설정',
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
-          ),
-        ],
+      bottomNavigationBar: StreamBuilder<List<AppAlert>>(
+        stream: _alertsStream,
+        builder: (context, snap) => ListenableBuilder(
+          listenable: _members,
+          builder: (context, _) {
+            final seen = _members.me?.alertsSeenAt;
+            final unread = (snap.data ?? const <AppAlert>[])
+                .where((a) => a.createdAt != null && (seen == null || a.createdAt!.isAfter(seen)))
+                .length;
+            return AppBottomNav(
+              unreadAlerts: unread,
+              onHistory: () => _openHistory(Backend.uid),
+              onAlerts: _openAlerts,
+              onMore: _openMore,
+            );
+          },
+        ),
       ),
       body: ListenableBuilder(
         listenable: Listenable.merge([_members, _places]),
         builder: (context, _) {
           final all = [if (_members.me != null) _members.me!, ..._members.others];
           final located = all.where((m) => m.position != null && m.sharing).toList();
+          final status = FamilyStatus.of(all);
           return Stack(
             children: [
               FamilyMap(
@@ -310,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       id: 'place-${p.groupId}-${p.id}',
                       center: p.position,
                       radius: p.radius,
-                      color: Theme.of(context).colorScheme.secondary,
+                      color: AppColors.place,
                     ),
                 ],
                 pins: [
@@ -320,7 +385,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       position: p.position,
                       label: p.name,
                       emoji: p.emoji,
-                      color: Theme.of(context).colorScheme.secondary,
+                      color: AppColors.place,
                     ),
                   for (final m in located)
                     MapPin(
@@ -335,10 +400,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               ? m.updatedLabel
                               : '오프라인 · ${m.updatedLabel}',
                       color: m.uid == Backend.uid
-                          ? Theme.of(context).colorScheme.tertiary
+                          ? AppColors.me
                           : m.isOnline
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey,
+                              ? AppColors.primary
+                              : AppColors.offline,
                       onTap: () => _openMember(m),
                     ),
                 ],
@@ -347,13 +412,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 left: 0,
                 right: 0,
                 top: 0,
-                child: Column(
-                  children: [
-                    if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
-                    if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
-                      _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
-                    if (_groups.isEmpty) _EmptyGroupsBanner(members: _members),
-                  ],
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      PillBar(
+                        leading: const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: AppLogo(size: 40),
+                        ),
+                        title: AppConfig.appName,
+                        actions: [
+                          IconButton(
+                            tooltip: '이동경로',
+                            icon: const Icon(Icons.route, size: 28),
+                            onPressed: () => _openHistory(Backend.uid),
+                          ),
+                          IconButton(
+                            tooltip: '그룹',
+                            icon: const Icon(Icons.groups, size: 28),
+                            onPressed: _openGroups,
+                          ),
+                          IconButton(
+                            tooltip: '설정',
+                            icon: const Icon(Icons.settings, size: 28),
+                            onPressed: _openSettings,
+                          ),
+                        ],
+                      ),
+                      if (status != null && _groups.isNotEmpty) HomeStatusCard(status: status),
+                      if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
+                      if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
+                        _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
+                      if (_groups.isEmpty) _EmptyGroupsBanner(onTap: _openGroups),
+                    ],
+                  ),
                 ),
               ),
               // 오른쪽 아래: 가족 아이콘을 누르면 그 사람 위치로 이동
@@ -366,15 +459,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ..bottomCover = cover
                       ..viewHeight = box.maxHeight;
                     // 가족 목록을 끌어 올려도 아이콘 줄이 그 바로 위에 보이게 한다 (공간이 좁으면 스크롤)
-                    final space = box.maxHeight - cover - 24 - 72;
+                    final space = box.maxHeight - cover - 24 - 240;
                     if (space < 64) return const SizedBox.shrink();
                     return Align(
                       alignment: Alignment.bottomRight,
                       child: Padding(
-                        padding: EdgeInsets.only(right: 12, bottom: cover + 12),
+                        padding: EdgeInsets.only(right: 14, bottom: cover + 14),
                         child: _MemberJumpBar(
                           members: located,
-                          maxHeight: math.min(300, space),
+                          maxHeight: math.min(340, space),
                           onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
                           onAll: () => _map.fit(located.map((m) => m.position!).toList()),
                         ),
@@ -390,44 +483,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 },
                 child: DraggableScrollableSheet(
                   initialChildSize: _sheetInitial,
-                  minChildSize: 0.12,
+                  minChildSize: _sheetInitial,
                   maxChildSize: 0.7,
-                  builder: (context, scroll) => Material(
-                    elevation: 8,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  builder: (context, scroll) => DecoratedBox(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                      boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 20, offset: Offset(0, -4))],
+                    ),
                     child: ListView(
                       controller: scroll,
+                      padding: EdgeInsets.zero,
                       children: [
                         Center(
                           child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 10),
-                            width: 36,
-                            height: 4,
+                            margin: const EdgeInsets.only(top: 10, bottom: 4),
+                            width: 44,
+                            height: 5,
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
+                              color: const Color(0xFFD2DBD9),
+                              borderRadius: BorderRadius.circular(3),
                             ),
                           ),
                         ),
-                        for (final m in all)
-                          ListTile(
-                            leading: MemberAvatar(member: m),
-                            title: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    m.uid == Backend.uid ? '${m.displayName} (나)' : m.displayName,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                OnlineBadge(member: m),
-                              ],
-                            ),
-                            subtitle: Text(_listSubtitle(m)),
-                            trailing: BatteryLabel(member: m),
+                        for (final (i, m) in all.indexed) ...[
+                          if (i > 0) const InsetDivider(indent: 104),
+                          MemberCard(
+                            member: m,
+                            isMe: m.uid == Backend.uid,
+                            placeLabel: nearPlaceLabel(m.position, _places.all),
+                            together: m.uid == Backend.uid
+                                ? null
+                                : _together[m.uid]?.on(DateTime.now()),
                             onTap: () => _openMember(m),
                           ),
+                        ],
+                        const SizedBox(height: 12),
                       ],
                     ),
                   ),
@@ -441,11 +532,256 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
-/// 아래 가족 목록의 처음 높이 (화면 비율)
-const _sheetInitial = 0.25;
+/// 아래 가족 목록의 처음 높이 (화면 비율): 내 카드 하나가 보이는 정도
+const _sheetInitial = 0.2;
 
 /// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
 const memberZoom = 15.0;
+
+/// 앱 로고 (지도 핀). 앱 아이콘 그림이 오면 이미지로 바꾼다.
+class AppLogo extends StatelessWidget {
+  const AppLogo({super.key, this.size = 40});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      Icon(Icons.location_on, size: size, color: AppColors.primary);
+}
+
+/// 홈 위쪽 상태 카드: "우리 가족이 모두 함께 있어요!" + 마지막 업데이트 시각.
+class HomeStatusCard extends StatelessWidget {
+  const HomeStatusCard({super.key, required this.status});
+  final FamilyStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+      radius: 26,
+      child: Row(
+        children: [
+          const Text('🏡', style: TextStyle(fontSize: 42, height: 1.1)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.circle,
+                        size: 10, color: status.anyOnline ? AppColors.online : AppColors.offline),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      // 좁은 폰에서도 한 줄에 다 보이도록 글자를 줄인다
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          status.headline,
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.ink),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(status.subtitle, style: const TextStyle(fontSize: 14, color: AppColors.sub)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(20)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.schedule, size: 16, color: AppColors.ink),
+                const SizedBox(width: 4),
+                Text(DateFormat('a h:mm', 'ko').format(status.latest),
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.ink)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 아래 가족 목록의 한 사람 카드.
+class MemberCard extends StatelessWidget {
+  const MemberCard({
+    super.key,
+    required this.member,
+    required this.isMe,
+    this.placeLabel,
+    this.together,
+    this.onTap,
+  });
+
+  final Member member;
+  final bool isMe;
+  final String? placeLabel;
+  final Duration? together;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = member;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+        child: Row(
+          children: [
+            MemberAvatar(member: m, radius: 36),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          isMe ? '${m.displayName} (나)' : m.displayName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.ink),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OnlineBadge(member: m),
+                    ],
+                  ),
+                  if (placeLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 18, color: AppColors.ink),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(placeLabel!,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 15, color: AppColors.sub),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(m.freshnessText,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14.5, color: AppColors.sub)),
+                      ),
+                    ],
+                  ),
+                  if (together != null && together!.inMinutes >= 1) ...[
+                    const SizedBox(height: 2),
+                    Text('🤝 오늘 함께 ${formatDuration(together!)}',
+                        style: const TextStyle(fontSize: 14, color: AppColors.sub)),
+                  ],
+                ],
+              ),
+            ),
+            BatteryLabel(member: m),
+            const Icon(Icons.chevron_right, size: 30, color: AppColors.ink),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 화면 아래 메뉴: 위치 · 위치기록 · 알림 · 더보기.
+class AppBottomNav extends StatelessWidget {
+  const AppBottomNav({
+    super.key,
+    required this.unreadAlerts,
+    required this.onHistory,
+    required this.onAlerts,
+    required this.onMore,
+  });
+
+  final int unreadAlerts;
+  final VoidCallback onHistory;
+  final VoidCallback onAlerts;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, -2))],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 72,
+          child: Row(
+            children: [
+              const _NavItem(icon: Icons.location_on, label: '위치', selected: true),
+              _NavItem(icon: Icons.history, label: '위치기록', onTap: onHistory),
+              _NavItem(icon: Icons.notifications_none, label: '알림', badge: unreadAlerts, onTap: onAlerts),
+              _NavItem(icon: Icons.more_horiz, label: '더보기', onTap: onMore),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.icon, required this.label, this.selected = false, this.badge = 0, this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final int badge;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.primary : AppColors.ink;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Badge(
+              isLabelVisible: badge > 0,
+              backgroundColor: AppColors.danger,
+              label: Text(badge > 9 ? '9+' : '$badge'),
+              child: Icon(icon, size: 30, color: color),
+            ),
+            const SizedBox(height: 4),
+            Text(label,
+                style: TextStyle(fontSize: 13.5, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+            const SizedBox(height: 4),
+            Container(
+              width: 40,
+              height: 3,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 지도 오른쪽 아래의 가족 아이콘 줄. 누르면 그 사람 위치로 지도를 옮긴다.
 class _MemberJumpBar extends StatelessWidget {
@@ -464,42 +800,41 @@ class _MemberJumpBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (members.isEmpty) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      elevation: 4,
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(28),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-        child: ConstrainedBox(
-          // 가족이 많으면 스크롤
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (members.length > 1)
-                  Tooltip(
-                    message: '모두 보기',
-                    child: IconButton(
-                      onPressed: onAll,
-                      icon: const Icon(Icons.groups),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(34),
+        boxShadow: AppColors.shadow,
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      child: ConstrainedBox(
+        // 가족이 많으면 스크롤
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (members.length > 1)
+                Tooltip(
+                  message: '모두 보기',
+                  child: IconButton(
+                    onPressed: onAll,
+                    icon: const Icon(Icons.groups, size: 30, color: AppColors.ink),
+                  ),
+                ),
+              for (final m in members)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Tooltip(
+                    message: m.uid == Backend.uid ? '나' : m.displayName,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => onMember(m),
+                      child: MemberAvatar(member: m, radius: 26),
                     ),
                   ),
-                for (final m in members)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Tooltip(
-                      message: m.uid == Backend.uid ? '나' : m.displayName,
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () => onMember(m),
-                        child: MemberAvatar(member: m, radius: 21),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
@@ -515,6 +850,32 @@ Future<bool> ensureSharing(BuildContext context) async {
   if (!context.mounted) return false;
   final granted = await DisclosureScreen.show(context);
   return granted && await LocationService.instance.start();
+}
+
+/// 지도 위 안내 카드 (위치 문제 · 절전 · 그룹 없음).
+class _NoticeCard extends StatelessWidget {
+  const _NoticeCard({required this.icon, required this.text, required this.actions, this.color = AppColors.danger});
+
+  final IconData icon;
+  final String text;
+  final List<Widget> actions;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        children: [
+          IconBubble(icon, size: 44, color: color, background: color.withValues(alpha: 0.1)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 14.5, color: AppColors.ink, height: 1.35))),
+          Column(mainAxisSize: MainAxisSize.min, children: actions),
+        ],
+      ),
+    );
+  }
 }
 
 /// 내 위치가 공유되지 않고 있을 때 원인과 해결 버튼을 보여준다.
@@ -545,25 +906,10 @@ class _SharingProblemBanner extends StatelessWidget {
             ),
           SharingProblem.none => ('', '', () async => false),
         };
-        final scheme = Theme.of(context).colorScheme;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Card(
-            color: scheme.errorContainer,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-              child: Row(
-                children: [
-                  Icon(Icons.location_disabled, color: scheme.onErrorContainer),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(text, style: TextStyle(color: scheme.onErrorContainer)),
-                  ),
-                  TextButton(onPressed: onPressed, child: Text(action)),
-                ],
-              ),
-            ),
-          ),
+        return _NoticeCard(
+          icon: Icons.location_disabled,
+          text: text,
+          actions: [TextButton(onPressed: onPressed, child: Text(action))],
         );
       },
     );
@@ -577,58 +923,34 @@ class _BatteryBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Card(
-        color: scheme.tertiaryContainer,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
-          child: Row(
-            children: [
-              Icon(Icons.battery_alert, color: scheme.onTertiaryContainer),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  '절전 설정 때문에 화면이 꺼지면 위치 공유가 멈출 수 있어요.\n'
-                  '앱 설정 > 배터리에서 "제한 없음"을 선택해주세요.',
-                  style: TextStyle(color: scheme.onTertiaryContainer),
-                ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: () => Geolocator.openAppSettings(),
-                    child: const Text('설정 열기'),
-                  ),
-                  TextButton(onPressed: onClose, child: const Text('닫기')),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _NoticeCard(
+      icon: Icons.battery_alert,
+      color: const Color(0xFFE08A00),
+      text: '절전 설정 때문에 화면이 꺼지면 위치 공유가 멈출 수 있어요.\n'
+          '앱 설정 > 배터리에서 "제한 없음"을 선택해주세요.',
+      actions: [
+        TextButton(onPressed: () => Geolocator.openAppSettings(), child: const Text('설정 열기')),
+        TextButton(onPressed: onClose, child: const Text('닫기')),
+      ],
     );
   }
 }
 
 class _EmptyGroupsBanner extends StatelessWidget {
-  const _EmptyGroupsBanner({required this.members});
-  final MembersController members;
+  const _EmptyGroupsBanner({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Card(
-        child: ListTile(
-          leading: const Icon(Icons.group_add),
-          title: const Text('아직 그룹이 없어요'),
-          subtitle: const Text('그룹을 만들거나 초대코드로 참여해 위치를 공유하세요.'),
-          onTap: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => GroupsScreen(members: members))),
-        ),
+    return SoftCard(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: const FeatureRow(
+        leading: IconBubble(Icons.group_add, size: 48),
+        title: '아직 그룹이 없어요',
+        subtitle: '그룹을 만들거나 초대코드로 참여해 위치를 공유하세요.',
+        trailing: Icon(Icons.chevron_right, color: AppColors.sub),
       ),
     );
   }
@@ -640,12 +962,14 @@ class _MemberSheet extends StatefulWidget {
     required this.isMe,
     required this.onHistory,
     required this.onTogether,
+    this.placeLabel,
     this.together,
   });
   final Member member;
   final bool isMe;
   final VoidCallback onHistory;
   final VoidCallback onTogether;
+  final String? placeLabel;
   final TogetherRecord? together;
 
   @override
@@ -679,37 +1003,20 @@ class _MemberSheetState extends State<_MemberSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: MemberAvatar(member: m, radius: 24),
-              title: Row(
-                children: [
-                  Flexible(
-                    child: Text(m.displayName,
-                        style: Theme.of(context).textTheme.titleLarge, overflow: TextOverflow.ellipsis),
-                  ),
-                  const SizedBox(width: 8),
-                  OnlineBadge(member: m),
-                ],
-              ),
-              subtitle: Text(m.statusText),
-              trailing: BatteryLabel(member: m),
-            ),
+            MemberCard(member: m, isMe: widget.isMe, placeLabel: widget.placeLabel),
+            const SizedBox(height: 8),
             if (!widget.isMe)
-              Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: const Text('🤝', style: TextStyle(fontSize: 26)),
-                  title: Text(
-                      '오늘 함께한 시간 ${formatDuration(widget.together?.on(DateTime.now()) ?? Duration.zero)}'),
-                  subtitle: Text(
-                      '최근 7일 ${formatDuration(widget.together?.lastDays(7) ?? Duration.zero)} · 언제 어디서 함께했는지 보기'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: widget.onTogether,
+              SoftCard(
+                padding: EdgeInsets.zero,
+                onTap: widget.onTogether,
+                child: FeatureRow(
+                  leading: const EmojiBubble('🤝', size: 48),
+                  title: '오늘 함께한 시간 ${formatDuration(widget.together?.on(DateTime.now()) ?? Duration.zero)}',
+                  subtitle:
+                      '최근 7일 ${formatDuration(widget.together?.lastDays(7) ?? Duration.zero)} · 언제 어디서 함께했는지 보기',
+                  trailing: const Icon(Icons.chevron_right, color: AppColors.sub),
                 ),
-              )
-            else
-              const SizedBox(height: 8),
+              ),
             Row(
               children: [
                 if (!widget.isMe)
@@ -745,26 +1052,16 @@ class OnlineBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final online = member.isOnline && member.sharing;
-    final color = online ? const Color(0xFF2E9E5B) : Theme.of(context).colorScheme.outline;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(online ? Icons.circle : Icons.circle_outlined, size: 8, color: color),
-          const SizedBox(width: 4),
-          Text(member.onlineLabel,
-              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
-        ],
-      ),
+    return TagChip(
+      member.onlineLabel,
+      dot: !online,
+      color: online ? AppColors.online : AppColors.sub,
+      background: online ? AppColors.onlineBg : const Color(0xFFEDF1F0),
     );
   }
 }
 
+/// 이모지 프로필: 흰 동그라미 + 청록 테두리 + 오른쪽 아래 온라인 점.
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({super.key, required this.member, this.radius = 20});
   final Member member;
@@ -772,33 +1069,42 @@ class MemberAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final online = member.isOnline && member.sharing;
     final emoji = member.avatar != null;
+    final ring = online ? AppColors.primaryDark : AppColors.offline;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        CircleAvatar(
-          radius: radius,
-          backgroundColor: online ? scheme.primary : scheme.outline,
-          child: CircleAvatar(
-            radius: radius - 2.5,
-            backgroundColor: emoji ? scheme.surface : (online ? scheme.primary : scheme.outline),
-            foregroundColor: online ? scheme.onPrimary : scheme.surface,
-            child: Text(member.badge, style: TextStyle(fontSize: emoji ? radius * 1.1 : null)),
+        Container(
+          width: radius * 2,
+          height: radius * 2,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: emoji ? Colors.white : ring,
+            border: Border.all(color: ring, width: radius > 24 ? 4 : 3),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            member.badge,
+            style: TextStyle(
+              fontSize: radius * (emoji ? 1.05 : 0.8),
+              height: 1.15,
+              color: emoji ? null : Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
         // 오른쪽 아래 온라인 점
         Positioned(
-          right: -1,
-          bottom: -1,
+          right: radius * 0.02,
+          bottom: radius * 0.02,
           child: Container(
-            width: radius * 0.55,
-            height: radius * 0.55,
+            width: radius * 0.42,
+            height: radius * 0.42,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: online ? const Color(0xFF2E9E5B) : scheme.outline,
-              border: Border.all(color: scheme.surface, width: 2),
+              color: online ? AppColors.online : AppColors.offline,
+              border: Border.all(color: Colors.white, width: 2),
             ),
           ),
         ),
@@ -815,16 +1121,17 @@ class BatteryLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final level = member.battery;
     if (level == null) return const SizedBox.shrink();
+    final low = level <= 15 && !member.charging;
     final icon = member.charging
         ? Icons.battery_charging_full
-        : level <= 15
+        : low
             ? Icons.battery_alert
             : Icons.battery_std;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 18, color: level <= 15 && !member.charging ? Colors.red : null),
-        Text('$level%'),
+        Icon(icon, size: 18, color: low ? AppColors.danger : AppColors.sub),
+        Text('$level%', style: TextStyle(fontSize: 14, color: low ? AppColors.danger : AppColors.sub)),
       ],
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../config.dart';
+import '../widgets/ui.dart';
 
 /// Google Play 정책의 "명시적 고지(Prominent Disclosure)" 화면.
 /// 위치 권한을 요청하기 전에 반드시 이 화면을 보여주고 동의를 받아야 한다.
@@ -81,7 +82,7 @@ class _DisclosureScreenState extends State<DisclosureScreen> {
           subtitle: Text(body),
         );
     return Scaffold(
-      appBar: AppBar(title: const Text('위치 정보 사용 안내')),
+      appBar: const PillAppBar(title: '위치 정보 사용 안내'),
       body: SafeArea(
         child: Column(
           children: [

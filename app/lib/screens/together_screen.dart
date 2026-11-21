@@ -6,6 +6,7 @@ import '../models/member.dart';
 import '../services/place_service.dart';
 import '../services/together_service.dart';
 import '../widgets/family_map.dart';
+import '../widgets/ui.dart';
 
 /// 가족 한 명과 하루 중 언제, 어디서 함께 있었는지.
 class TogetherScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class _TogetherScreenState extends State<TogetherScreen> {
     final days = [for (var i = 0; i < 7; i++) _today().subtract(Duration(days: i))];
 
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.member.displayName}님과 함께한 시간')),
+      appBar: PillAppBar(title: '${widget.member.displayName}님과 함께한 시간'),
       body: StreamBuilder<Map<String, TogetherRecord>>(
         stream: _stream,
         builder: (context, snap) {
