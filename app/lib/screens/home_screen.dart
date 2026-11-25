@@ -55,7 +55,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final Stream<List<AppAlert>> _alertsStream = AlertService.recent(limit: 20);
 
   /// 아래 가족 목록이 화면에서 차지하는 비율 (끌어 올리면 커진다)
-  double _sheetExtent = _sheetInitial;
+  double _sheetExtent = 0;
+
+  /// 아래 목록 맨 위에 보여줄 사람 (가족 아이콘·지도 핀을 누르면 바뀐다). null 이면 나.
+  String? _selectedUid;
+  final _sheet = DraggableScrollableController();
+
+  /// 아래 목록이 접혔을 때 높이 (화면 비율): 고른 사람 카드와 버튼이 보이는 정도
+  double _sheetMin = 0.18;
+  bool _ringing = false;
 
   @override
   void initState() {
@@ -109,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _togetherSub?.cancel();
     _members.dispose();
+    _sheet.dispose();
     _places.dispose();
     super.dispose();
   }
@@ -241,6 +250,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ));
   }
 
+  /// 가족을 고르면 지도를 그 사람에게 옮기고 아래 목록 맨 위에 그 사람을 보여준다.
+  void _select(Member m) {
+    setState(() => _selectedUid = m.uid);
+    if (m.position != null) _map.moveTo(m.position!, zoom: memberZoom);
+    if (_sheet.isAttached && _sheet.size > _sheetMin + 0.01) {
+      _sheet.animateTo(_sheetMin, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  Future<void> _ring(Member m) async {
+    setState(() => _ringing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await MessagingService.ring(m.uid);
+      messenger.showSnackBar(SnackBar(content: Text('${m.displayName}님의 휴대폰 벨을 울렸어요 (최대 1분)')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(Backend.errorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _ringing = false);
+    }
+  }
+
   void _openMember(Member m) {
     if (m.position != null) _map.moveTo(m.position!, zoom: memberZoom);
     showModalBottomSheet<void>(
@@ -351,186 +382,203 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
         ),
       ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([_members, _places]),
-        builder: (context, _) {
-          final all = [if (_members.me != null) _members.me!, ..._members.others];
-          final located = all.where((m) => m.position != null && m.sharing).toList();
-          return Stack(
-            children: [
-              FamilyMap(
-                controller: _map,
-                onReady: () {
-                  final me = _members.me?.position;
-                  if (me != null) {
-                    _centeredOnce = true;
-                    _map.moveTo(me, zoom: 15);
-                  }
-                },
-                circles: [
-                  for (final p in _places.all)
-                    MapCircle(
-                      id: 'place-${p.groupId}-${p.id}',
-                      center: p.position,
-                      radius: p.radius,
-                      color: AppColors.place,
-                    ),
-                ],
-                pins: [
-                  for (final p in _places.all)
-                    MapPin(
-                      id: 'place-${p.groupId}-${p.id}',
-                      position: p.position,
-                      label: p.name,
-                      emoji: p.emoji,
-                      color: AppColors.place,
-                    ),
-                  for (final m in located)
-                    MapPin(
-                      id: m.uid,
-                      position: m.position!,
-                      label: m.uid == Backend.uid ? '나' : m.displayName,
-                      emoji: m.badge,
-                      // 다른 가족은 위치가 언제 것인지 함께 보여준다
-                      subLabel: m.uid == Backend.uid
-                          ? null
-                          : m.isOnline
-                              ? m.updatedLabel
-                              : '오프라인 · ${m.updatedLabel}',
-                      color: m.uid == Backend.uid
-                          ? AppColors.me
-                          : m.isOnline
-                              ? AppColors.primary
-                              : AppColors.offline,
-                      onTap: () => _openMember(m),
-                    ),
-                ],
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Column(
-                    children: [
-                      PillBar(
-                        leading: const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: AppLogo(size: 32),
+      body: LayoutBuilder(
+        builder: (context, page) {
+          // 접힌 목록 높이: 카드 한 장 + 버튼 줄 (약 150px)
+          _sheetMin = (150 / page.maxHeight).clamp(0.12, 0.4);
+          return ListenableBuilder(
+            listenable: Listenable.merge([_members, _places]),
+            builder: (context, _) {
+              final all = [if (_members.me != null) _members.me!, ..._members.others];
+              // 고른 사람을 맨 위로 (없거나 그룹에서 빠졌으면 나)
+              final selected = all.where((m) => m.uid == _selectedUid).firstOrNull ?? _members.me;
+              final ordered = [?selected, ...all.where((m) => m.uid != selected?.uid)];
+              final located = all.where((m) => m.position != null && m.sharing).toList();
+              return Stack(
+                children: [
+                  FamilyMap(
+                    controller: _map,
+                    onReady: () {
+                      final me = _members.me?.position;
+                      if (me != null) {
+                        _centeredOnce = true;
+                        _map.moveTo(me, zoom: 15);
+                      }
+                    },
+                    circles: [
+                      for (final p in _places.all)
+                        MapCircle(
+                          id: 'place-${p.groupId}-${p.id}',
+                          center: p.position,
+                          radius: p.radius,
+                          color: AppColors.place,
                         ),
-                        title: AppConfig.appName,
-                        actions: [
-                          IconButton(
-                            tooltip: '이동경로',
-                            icon: const Icon(Icons.route, size: 23),
-                            onPressed: () => _openHistory(Backend.uid),
-                          ),
-                          IconButton(
-                            tooltip: '그룹',
-                            icon: const Icon(Icons.groups, size: 23),
-                            onPressed: _openGroups,
-                          ),
-                          IconButton(
-                            tooltip: '설정',
-                            icon: const Icon(Icons.settings, size: 23),
-                            onPressed: _openSettings,
-                          ),
-                        ],
-                      ),
-                      if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
-                      if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
-                        _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
-                      if (_groups.isEmpty) _EmptyGroupsBanner(onTap: _openGroups),
+                    ],
+                    pins: [
+                      for (final p in _places.all)
+                        MapPin(
+                          id: 'place-${p.groupId}-${p.id}',
+                          position: p.position,
+                          label: p.name,
+                          emoji: p.emoji,
+                          color: AppColors.place,
+                        ),
+                      for (final m in located)
+                        MapPin(
+                          id: m.uid,
+                          position: m.position!,
+                          label: m.uid == Backend.uid ? '나' : m.displayName,
+                          emoji: m.badge,
+                          // 다른 가족은 위치가 언제 것인지 함께 보여준다
+                          subLabel: m.uid == Backend.uid
+                              ? null
+                              : m.isOnline
+                                  ? m.updatedLabel
+                                  : '오프라인 · ${m.updatedLabel}',
+                          color: m.uid == Backend.uid
+                              ? AppColors.me
+                              : m.isOnline
+                                  ? AppColors.primary
+                                  : AppColors.offline,
+                          onTap: () => _select(m),
+                        ),
                     ],
                   ),
-                ),
-              ),
-              // 오른쪽 아래: 가족 아이콘을 누르면 그 사람 위치로 이동
-              Positioned.fill(
-                child: LayoutBuilder(
-                  builder: (context, box) {
-                    // 지도에서 가족 목록에 가려진 부분: 이동·모두 보기는 보이는 부분 가운데로 맞춘다
-                    final cover = box.maxHeight * _sheetExtent;
-                    _map
-                      ..bottomCover = cover
-                      ..viewHeight = box.maxHeight;
-                    // 가족 목록을 끌어 올려도 아이콘 줄이 그 바로 위에 보이게 한다 (공간이 좁으면 스크롤)
-                    final space = box.maxHeight - cover - 24 - 120;
-                    if (space < 64) return const SizedBox.shrink();
-                    return Align(
-                      alignment: Alignment.bottomRight,
-                      child: Padding(
-                        padding: EdgeInsets.only(right: 10, bottom: cover + 10),
-                        child: _MemberJumpBar(
-                          members: located,
-                          maxHeight: math.min(280, space),
-                          onMember: (m) => _map.moveTo(m.position!, zoom: memberZoom),
-                          onAll: () => _map.fit(located.map((m) => m.position!).toList()),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              NotificationListener<DraggableScrollableNotification>(
-                onNotification: (n) {
-                  if ((n.extent - _sheetExtent).abs() > 0.005) setState(() => _sheetExtent = n.extent);
-                  return false;
-                },
-                child: DraggableScrollableSheet(
-                  initialChildSize: _sheetInitial,
-                  minChildSize: _sheetInitial,
-                  maxChildSize: 0.7,
-                  builder: (context, scroll) => DecoratedBox(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                      boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 20, offset: Offset(0, -4))],
-                    ),
-                    child: ListView(
-                      controller: scroll,
-                      padding: EdgeInsets.zero,
-                      children: [
-                        Center(
-                          child: Container(
-                            margin: const EdgeInsets.only(top: 8, bottom: 2),
-                            width: 40,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD2DBD9),
-                              borderRadius: BorderRadius.circular(3),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          PillBar(
+                            leading: const Padding(
+                              padding: EdgeInsets.only(left: 6),
+                              child: AppLogo(size: 32),
                             ),
+                            title: AppConfig.appName,
+                            actions: [
+                              IconButton(
+                                tooltip: '이동경로',
+                                icon: const Icon(Icons.route, size: 23),
+                                onPressed: () => _openHistory(Backend.uid),
+                              ),
+                              IconButton(
+                                tooltip: '그룹',
+                                icon: const Icon(Icons.groups, size: 23),
+                                onPressed: _openGroups,
+                              ),
+                              IconButton(
+                                tooltip: '설정',
+                                icon: const Icon(Icons.settings, size: 23),
+                                onPressed: _openSettings,
+                              ),
+                            ],
                           ),
-                        ),
-                        for (final (i, m) in all.indexed) ...[
-                          if (i > 0) const InsetDivider(indent: 72),
-                          MemberCard(
-                            member: m,
-                            isMe: m.uid == Backend.uid,
-                            placeLabel: nearPlaceLabel(m.position, _places.all),
-                            together: m.uid == Backend.uid
-                                ? null
-                                : _together[m.uid]?.on(DateTime.now()),
-                            onTap: () => _openMember(m),
-                          ),
+                          if (_members.me?.sharing ?? true) const _SharingProblemBanner(),
+                          if ((_members.me?.sharing ?? true) && _batteryOptimized && !_batteryBannerClosed)
+                            _BatteryBanner(onClose: () => setState(() => _batteryBannerClosed = true)),
+                          if (_groups.isEmpty) _EmptyGroupsBanner(onTap: _openGroups),
                         ],
-                        const SizedBox(height: 12),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
+                  // 오른쪽 아래: 가족 아이콘을 누르면 그 사람 위치로 이동
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        // 지도에서 가족 목록에 가려진 부분: 이동·모두 보기는 보이는 부분 가운데로 맞춘다
+                        final cover = box.maxHeight * math.max(_sheetExtent, _sheetMin);
+                        _map
+                          ..bottomCover = cover
+                          ..viewHeight = box.maxHeight;
+                        // 가족 목록을 끌어 올려도 아이콘 줄이 그 바로 위에 보이게 한다 (공간이 좁으면 스크롤)
+                        final space = box.maxHeight - cover - 24 - 120;
+                        if (space < 64) return const SizedBox.shrink();
+                        return Align(
+                          alignment: Alignment.bottomRight,
+                          child: Padding(
+                            padding: EdgeInsets.only(right: 10, bottom: cover + 10),
+                            child: _MemberJumpBar(
+                              members: located,
+                              maxHeight: math.min(280, space),
+                              onMember: _select,
+                              onAll: () => _map.fit(located.map((m) => m.position!).toList()),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  NotificationListener<DraggableScrollableNotification>(
+                    onNotification: (n) {
+                      if ((n.extent - _sheetExtent).abs() > 0.005) setState(() => _sheetExtent = n.extent);
+                      return false;
+                    },
+                    child: DraggableScrollableSheet(
+                      controller: _sheet,
+                      initialChildSize: _sheetMin,
+                      minChildSize: _sheetMin,
+                      maxChildSize: 0.7,
+                      builder: (context, scroll) => DecoratedBox(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                          boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 20, offset: Offset(0, -4))],
+                        ),
+                        child: ListView(
+                          controller: scroll,
+                          padding: EdgeInsets.zero,
+                          children: [
+                            Center(
+                              child: Container(
+                                margin: const EdgeInsets.only(top: 8, bottom: 2),
+                                width: 40,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD2DBD9),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ),
+                            for (final (i, m) in ordered.indexed) ...[
+                              if (i > 0) const InsetDivider(indent: 72),
+                              MemberCard(
+                                member: m,
+                                isMe: m.uid == Backend.uid,
+                                placeLabel: nearPlaceLabel(m.position, _places.all),
+                                together: m.uid == Backend.uid
+                                    ? null
+                                    : _together[m.uid]?.on(DateTime.now()),
+                                onTap: () => _openMember(m),
+                              ),
+                              // 맨 위(고른 사람)에는 바로 쓸 수 있는 버튼을 둔다
+                              if (i == 0) _MemberActions(
+                                isMe: m.uid == Backend.uid,
+                                ringing: _ringing,
+                                onRing: () => _ring(m),
+                                onHistory: () => _openHistory(m.uid),
+                                onTogether: () => Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => TogetherScreen(member: m, places: _places),
+                                )),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
     );
   }
 }
-
-/// 아래 가족 목록의 처음 높이 (화면 비율): 내 카드 하나가 보이는 정도
-const _sheetInitial = 0.13;
 
 /// 가족 위치로 이동할 때의 확대 수준: 주변 동네와 길이 함께 보이는 정도
 const memberZoom = 15.0;
@@ -630,6 +678,67 @@ class MemberCard extends StatelessWidget {
             const Icon(Icons.chevron_right, size: 22, color: AppColors.sub),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 아래 목록 맨 위 사람의 바로가기 버튼 (벨 울리기 · 이동경로 · 함께한 시간).
+class _MemberActions extends StatelessWidget {
+  const _MemberActions({
+    required this.isMe,
+    required this.ringing,
+    required this.onRing,
+    required this.onHistory,
+    required this.onTogether,
+  });
+
+  final bool isMe;
+  final bool ringing;
+  final VoidCallback onRing;
+  final VoidCallback onHistory;
+  final VoidCallback onTogether;
+
+  @override
+  Widget build(BuildContext context) {
+    const small = Size(0, 36);
+    const text = TextStyle(fontFamily: 'Pretendard', fontSize: 13, fontWeight: FontWeight.w700);
+    final pad = const EdgeInsets.symmetric(horizontal: 10);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: [
+          if (!isMe) ...[
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: small, padding: pad, textStyle: text),
+                onPressed: ringing ? null : onRing,
+                icon: const Icon(Icons.volume_up, size: 17),
+                label: const Text('벨 울리기'),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: small, padding: pad, textStyle: text),
+              onPressed: onHistory,
+              icon: const Icon(Icons.route, size: 17),
+              label: const Text('이동경로'),
+            ),
+          ),
+          if (!isMe) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: small, padding: pad, textStyle: text),
+                onPressed: onTogether,
+                icon: const Text('🤝', style: TextStyle(fontSize: 14)),
+                label: const Text('함께한 시간'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
